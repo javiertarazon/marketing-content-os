@@ -1,6 +1,8 @@
 FROM node:20-alpine
 
 WORKDIR /app
+ARG NEXT_PUBLIC_MIXPOST_URL=
+ENV NEXT_PUBLIC_MIXPOST_URL=${NEXT_PUBLIC_MIXPOST_URL}
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .

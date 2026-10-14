@@ -14,6 +14,16 @@ def test_notebooks_are_valid_json_with_python_cells() -> None:
         notebook = json.loads(path.read_text(encoding="utf-8"))
         assert notebook["nbformat"] == 4
 
+        if path.name == "01_research_scrapegraph.ipynb":
+            source = "\n".join(
+                "".join(cell["source"])
+                for cell in notebook["cells"]
+                if cell["cell_type"] in ("code", "markdown")
+            )
+            assert "OPENAI_API_KEY" not in source
+            assert "SCRIPT_SPACE_URL" in source
+            assert 'api_name="/generate"' in source
+
         for cell in notebook["cells"]:
             if cell["cell_type"] != "code":
                 continue
