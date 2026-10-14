@@ -24,6 +24,14 @@ def test_notebooks_are_valid_json_with_python_cells() -> None:
             assert "SCRIPT_SPACE_URL" in source
             assert 'api_name="/generate"' in source
 
+        code_source = "\n".join(
+            "".join(cell["source"])
+            for cell in notebook["cells"]
+            if cell["cell_type"] == "code"
+        )
+        assert "while True:" in code_source
+        assert "start_lease_heartbeat" in code_source
+
         for cell in notebook["cells"]:
             if cell["cell_type"] != "code":
                 continue

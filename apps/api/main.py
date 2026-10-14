@@ -22,6 +22,8 @@ from core.schemas import (
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 WORKER_API_TOKEN = os.environ.get("WORKER_API_TOKEN", "")
+JOB_LEASE_SECONDS = 300
+MAX_JOB_ATTEMPTS = 3
 
 
 def get_connection() -> psycopg.Connection:
@@ -47,6 +49,17 @@ def init_database() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """
+        )
+        connection.execute(
+            "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ"
+        )
+        connection.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at = now() + (%s * interval '1 second')
+            WHERE status = 'running' AND lease_expires_at IS NULL
+            """,
+            (JOB_LEASE_SECONDS,),
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs (worker, created_at) WHERE status = 'queued'"
@@ -164,6 +177,26 @@ def reserve_job(
 ) -> dict | None:
     lease_token = secrets.token_urlsafe(32)
     with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'queued', lease_token = NULL, lease_expires_at = NULL,
+                error = 'Worker lease expired; returned to queue', updated_at = now()
+            WHERE status = 'running' AND lease_expires_at <= now()
+              AND attempts < %s
+            """,
+            (MAX_JOB_ATTEMPTS,),
+        )
+        connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'failed', lease_token = NULL, lease_expires_at = NULL,
+                error = 'Worker lease expired after maximum attempts', updated_at = now()
+            WHERE status = 'running' AND lease_expires_at <= now()
+              AND attempts >= %s
+            """,
+            (MAX_JOB_ATTEMPTS,),
+        )
         row = connection.execute(
             """
             WITH next_job AS (
@@ -175,17 +208,41 @@ def reserve_job(
             )
             UPDATE jobs
             SET status = 'running', lease_token = %s,
+                lease_expires_at = now() + (%s * interval '1 second'),
                 attempts = attempts + 1, updated_at = now()
             WHERE job_id = (SELECT job_id FROM next_job)
             RETURNING *
             """,
-            (worker.value, lease_token),
+            (worker.value, lease_token, JOB_LEASE_SECONDS),
         ).fetchone()
     if row is None:
         return None
     record = serialize_job(row).model_dump(mode="json")
     record["lease_token"] = lease_token
     return record
+
+
+@app.post("/v1/jobs/{job_id}/heartbeat", dependencies=[Depends(require_worker_token)])
+def heartbeat_job(
+    job_id: UUID,
+    lease_token: Annotated[str | None, Header(alias="X-Worker-Lease")] = None,
+) -> dict[str, str]:
+    if not lease_token:
+        raise HTTPException(status_code=401, detail="Falta el token de reserva del trabajo")
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at = now() + (%s * interval '1 second'),
+                updated_at = now()
+            WHERE job_id = %s AND status = 'running' AND lease_token = %s
+            RETURNING job_id
+            """,
+            (JOB_LEASE_SECONDS, job_id, lease_token),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=409, detail="Reserva invalida o trabajo no activo")
+    return {"status": "ok"}
 
 
 def update_leased_job(
@@ -203,7 +260,7 @@ def update_leased_job(
             """
             UPDATE jobs
             SET status = %s, output = %s::jsonb, error = %s,
-                lease_token = NULL, updated_at = now()
+                lease_token = NULL, lease_expires_at = NULL, updated_at = now()
             WHERE job_id = %s AND status = 'running' AND lease_token = %s
             RETURNING *
             """,
@@ -262,7 +319,7 @@ def complete_job(
             """
             UPDATE jobs
             SET status = 'succeeded', output = %s::jsonb, error = NULL,
-                lease_token = NULL, updated_at = now()
+                lease_token = NULL, lease_expires_at = NULL, updated_at = now()
             WHERE job_id = %s
             RETURNING *
             """,

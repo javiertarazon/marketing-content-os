@@ -53,6 +53,23 @@ services:
     depends_on:
       - api
 
+  worker-gateway:
+    image: nginx:1.27-alpine
+    profiles: ["colab-tunnel"]
+    volumes:
+      - ./worker-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:8002:8080"
+    depends_on:
+      - api
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["colab-tunnel"]
+    command: tunnel --no-autoupdate --url http://worker-gateway:8080
+    depends_on:
+      - worker-gateway
+
   mixpost:
     image: inovector/mixpost:latest
     profiles: ["scheduler"]

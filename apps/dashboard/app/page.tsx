@@ -27,7 +27,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    refreshJobs().catch((error: Error) => setMessage(error.message));
+    const refresh = () => refreshJobs().catch((error: Error) => setMessage(error.message));
+    refresh();
+    const interval = window.setInterval(refresh, 10_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   async function submitJob(event: FormEvent<HTMLFormElement>) {
@@ -64,7 +67,7 @@ export default function Dashboard() {
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 32 }}>
       <h1>Marketing Content OS</h1>
-      <p>Cola de investigacion y renderizado</p>
+      <p>Cola de investigacion y renderizado; se actualiza cada 10 segundos.</p>
       <p><a href={mixpostUrl} target="_blank" rel="noreferrer">Abrir Mixpost Lite para programar contenido</a></p>
       <form onSubmit={submitJob} style={{ display: "grid", gap: 8, margin: "24px 0" }}>
         <input aria-label="Tema del contenido" required value={topic}
