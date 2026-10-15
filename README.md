@@ -4,6 +4,8 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 
 > MVP: API/cola, Spaces privados de voz y guiones, dos notebooks de Colab y programación manual en Mixpost Lite. Requiere configurar cuentas, claves y almacenamiento.
 
+Auditoría completa del estado del proyecto y de problemas, cambios y recomendaciones: [docs/auditoria-marketing-content-os.md](./docs/auditoria-marketing-content-os.md)
+
 ## Estructura
 
 - `apps/api`: API FastAPI y ciclo de vida de trabajos.
@@ -70,6 +72,18 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
    - `STORAGE_PUBLIC_BASE_URL`: URL publica del bucket (para pruebas se puede habilitar `r2.dev`; para uso estable, un dominio personalizado).
 
    Configura el bucket como publico solo si aceptas que cualquiera con la URL pueda ver los WAV y MP4 generados. R2 Standard indica actualmente un nivel gratuito de 10 GB-mes, 1 millon de operaciones Class A, 10 millones Class B y salida de datos sin costo; verifica el precio vigente y elimina medios que ya no necesites.
+
+   Para administrar R2 mediante la REST API desde este equipo, crea un token separado de las credenciales S3. En Cloudflare abre **My Profile > API Tokens > Create Token > Create Custom Token** y configura:
+
+   - **Permissions**: `Account` → `Workers R2 Storage` → `Edit`. La API documenta este permiso como `Workers R2 Storage Write`; `Edit` concede operaciones de lectura/listado y escritura, incluida la configuración del bucket.
+   - **Account Resources**: `Include` → `Specific account` → selecciona la cuenta que contiene el bucket.
+   - No agregues permisos de Zone/User ni uses `Global API Key`. Puedes establecer una expiración corta para una tarea puntual, pero el token debe seguir activo durante la prueba.
+
+   Guarda el valor secreto del token en `CLOUDFLARE_API_TOKEN`, el identificador de cuenta en `CLOUDFLARE_ACCOUNT_ID` y el nombre en `R2_BUCKET_NAME`, dentro de `.env.cloudflare.local` (archivo ignorado por Git). El campo `CLOUDFLARE_API_TOKEN` recibe el secreto del token Bearer, no su nombre ni el ID mostrado en el panel.
+
+   **Son credenciales distintas:** el token Bearer administra recursos por la REST API; `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY` son credenciales compatibles con S3 para leer/escribir objetos y van en `.env`/Secrets de Colab, con permisos `Object Read & Write` limitados al bucket. No uses `Admin Read & Write` para el acceso S3 de los workers.
+
+   Para crear buckets y habilitar el dominio administrado `r2.dev`, Cloudflare requiere el permiso de escritura de R2. El endpoint para activar acceso público es `PUT /accounts/{account_id}/r2/buckets/{bucket_name}/domains/managed`; el estado se consulta con `GET` al mismo endpoint. `r2.dev` hace públicos los objetos para quien tenga sus enlaces, por lo que habilítalo solo tras aceptar esa exposición. El archivo local contiene inicialmente `R2_BUCKET_NAME=marketing-content-media`; ajusta el nombre si tu bucket ya tiene otro. Nunca pegues tokens ni claves en el chat, README, notebooks o repositorio.
 
 5. En **cada notebook** abre el panel **Secrets** (icono de llave), crea cada nombre, pega su valor y habilita el acceso para el notebook. Usa exactamente:
 
