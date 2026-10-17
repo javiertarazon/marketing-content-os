@@ -13,18 +13,32 @@ MODEL = OmniVoice.from_pretrained(
 )
 
 
-@spaces.GPU(duration=180)
+@spaces.GPU(duration=120)
 def generate_voice(
-    text: str, gender: str, age: str, pitch: str
+    text: str,
+    gender: str,
+    age: str,
+    pitch: str,
+    reference_audio: str | None,
+    reference_text: str,
 ) -> tuple[int, np.ndarray]:
     if not text.strip():
         raise gr.Error("Escribe el texto que quieres narrar.")
+    if bool(reference_audio) != bool(reference_text.strip()):
+        raise gr.Error("La muestra de voz requiere su transcripción exacta.")
 
     instruct = ", ".join(item for item in (gender, age, pitch) if item)
+    reference = {}
+    if reference_audio:
+        reference = {
+            "ref_audio": reference_audio,
+            "ref_text": reference_text.strip(),
+        }
     audio = MODEL.generate(
         text=text.strip(),
         language="Spanish",
         instruct=instruct or None,
+        **reference,
     )
     waveform = audio[0].squeeze(0).float().cpu().numpy()
     if MODEL.sampling_rate is None:
@@ -50,6 +64,15 @@ demo = gr.Interface(
             choices=["", "very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch"],
             value="moderate pitch",
             label="Tono",
+        ),
+        gr.Audio(
+            type="filepath",
+            label="Muestra WAV de una voz propia o autorizada (opcional)",
+        ),
+        gr.Textbox(
+            label="Transcripción exacta de la muestra",
+            lines=3,
+            max_length=5000,
         ),
     ],
     outputs=gr.Audio(label="Voz generada"),

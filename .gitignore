@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+!.env.colab.example
+!infra/.env.production.example
 .env.cloudflare.local
 .venv/
 venv/

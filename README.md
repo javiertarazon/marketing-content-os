@@ -9,7 +9,7 @@ Auditoría completa del estado del proyecto y de problemas, cambios y recomendac
 ## Estructura
 
 - `apps/api`: API FastAPI y ciclo de vida de trabajos.
-- `apps/dashboard`: interfaz Next.js inicial.
+- `apps/dashboard`: dashboard Next.js con seguimiento por etapa e importación de medios locales.
 - `apps/voice-studio-space`: Space Gradio privado de VoiceStudio/OmniVoice sobre ZeroGPU.
 - `apps/script-generator-space`: Space Gradio privado de Qwen3-4B sobre ZeroGPU.
 - `packages/python/core`: esquemas compartidos.
@@ -62,16 +62,15 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
 
    Copia la URL `https://...trycloudflare.com` que aparece en el log. `Ctrl+C` solo cierra la vista de logs; para parar el tunel ejecuta `docker compose --profile colab-tunnel --env-file .env -f infra/docker-compose.yml stop cloudflared worker-gateway`. Al iniciar otro Quick Tunnel se generara otra URL.
 
-3. La URL del tunel solo reenvia `POST /v1/jobs/next`, `POST /v1/jobs/{id}/heartbeat`, `POST /v1/jobs/{id}/complete` y `POST /v1/jobs/{id}/fail`. No publica el alta/listado de trabajos, PostgreSQL, Mixpost ni la documentacion de la API. La API exige `WORKER_API_TOKEN` y un lease valido. Copia el valor local de `WORKER_API_TOKEN` desde `.env` directamente a los Secrets de Colab; no lo pegues en el notebook ni en Git.
+3. La URL del tunel solo reenvia `POST /v1/jobs/next`, `POST /v1/jobs/{id}/heartbeat`, `POST /v1/jobs/{id}/progress`, `POST /v1/jobs/{id}/complete` y `POST /v1/jobs/{id}/fail`. No publica el alta/listado de trabajos, la biblioteca local, PostgreSQL, Mixpost ni la documentacion de la API. La API exige `WORKER_API_TOKEN` y un lease valido. Copia el valor local de `WORKER_API_TOKEN` desde `.env` directamente a los Secrets de Colab; no lo pegues en el notebook ni en Git.
 
-4. Configura almacenamiento persistente para audio y videos. En Cloudflare crea un bucket R2, genera credenciales S3 con permisos solo para ese bucket y guarda sus valores unicamente en Colab Secrets:
+4. Configura almacenamiento persistente **privado** en Cloudflare R2. La API local y ambos workers necesitan credenciales S3 con permisos solo para ese bucket. Guarda las credenciales en `.env` local y en Colab Secrets:
 
    - `S3_ENDPOINT_URL`: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
    - `S3_BUCKET`: nombre del bucket R2.
    - `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`: credenciales S3 del bucket.
-   - `STORAGE_PUBLIC_BASE_URL`: URL publica del bucket (para pruebas se puede habilitar `r2.dev`; para uso estable, un dominio personalizado).
 
-   Configura el bucket como publico solo si aceptas que cualquiera con la URL pueda ver los WAV y MP4 generados. R2 Standard indica actualmente un nivel gratuito de 10 GB-mes, 1 millon de operaciones Class A, 10 millones Class B y salida de datos sin costo; verifica el precio vigente y elimina medios que ya no necesites.
+   No habilites `r2.dev` ni acceso público para el bucket. Los workers leen/escriben mediante S3 y el dashboard sirve audio/video con enlaces firmados de cinco minutos. `STORAGE_PUBLIC_BASE_URL` se conserva únicamente para compatibilidad con resultados anteriores.
 
    Para administrar R2 mediante la REST API desde este equipo, crea un token separado de las credenciales S3. En Cloudflare abre **My Profile > API Tokens > Create Token > Create Custom Token** y configura:
 
@@ -83,20 +82,24 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
 
    **Son credenciales distintas:** el token Bearer administra recursos por la REST API; `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY` son credenciales compatibles con S3 para leer/escribir objetos y van en `.env`/Secrets de Colab, con permisos `Object Read & Write` limitados al bucket. No uses `Admin Read & Write` para el acceso S3 de los workers.
 
-   Para crear buckets y habilitar el dominio administrado `r2.dev`, Cloudflare requiere el permiso de escritura de R2. El endpoint para activar acceso público es `PUT /accounts/{account_id}/r2/buckets/{bucket_name}/domains/managed`; el estado se consulta con `GET` al mismo endpoint. `r2.dev` hace públicos los objetos para quien tenga sus enlaces, por lo que habilítalo solo tras aceptar esa exposición. El archivo local contiene inicialmente `R2_BUCKET_NAME=marketing-content-media`; ajusta el nombre si tu bucket ya tiene otro. Nunca pegues tokens ni claves en el chat, README, notebooks o repositorio.
+   El token REST de Cloudflare solo se requiere para tareas de administración; la API y los workers usan las credenciales S3. Nunca pegues tokens ni claves en el chat, README, notebooks o repositorio.
 
-5. En **cada notebook** abre el panel **Secrets** (icono de llave), crea cada nombre, pega su valor y habilita el acceso para el notebook. Usa exactamente:
+5. En el dashboard local, ve a **Biblioteca local de medios** y selecciona la carpeta de recursos. WAV, MP4, JPG, PNG y WEBP (hasta 250 MB por archivo) se importan al bucket R2 privado. No se comparte ninguna ruta del disco con Colab; los workers descargan los objetos desde R2. Para una voz clonada, selecciona la muestra WAV, escribe su transcripción exacta y confirma que eres titular o tienes autorización. OmniVoice usará esa referencia para narrar el guion nuevo. Para editar con material propio, selecciona un fondo MP4 o una imagen; se conserva el video, pero se silencia su audio original para priorizar la narración.
 
-   - En `01_research_scrapegraph.ipynb`: `API_BASE_URL` (la URL `trycloudflare.com`, sin `/` final), `WORKER_API_TOKEN`, `SCRIPT_SPACE_URL` (`https://javiertarazon-marketing-script-generator.hf.space`), `VOICE_STUDIO_URL` (`https://javiertarazon-voice-studio-agent.hf.space`), `HF_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` y `STORAGE_PUBLIC_BASE_URL`.
-   - En `02_render_remotion.ipynb`: `API_BASE_URL`, `WORKER_API_TOKEN` y los cinco secretos `S3_*`/`STORAGE_PUBLIC_BASE_URL`.
+6. En **cada notebook** abre el panel **Secrets** (icono de llave), crea cada nombre, pega su valor y habilita el acceso para el notebook. Usa exactamente:
+
+   La plantilla local [`.env.colab.example`](./.env.colab.example) reúne las variables requeridas por los workers. Puedes copiarla a `.env.colab` para preparar tus valores localmente; esa copia queda ignorada por Git. Colab no importa el archivo automáticamente: transfiere cada valor directamente al panel **Secrets** del notebook. No subas `.env.colab` a Drive, al repositorio ni al chat. `API_BASE_URL` debe ser la URL HTTPS del Quick Tunnel activo, sin `/` final; cambia al reiniciar el túnel.
+
+   - En `01_research_scrapegraph.ipynb`: `API_BASE_URL` (la URL `trycloudflare.com`, sin `/` final), `WORKER_API_TOKEN`, `SCRIPT_SPACE_URL` (`https://javiertarazon-marketing-script-generator.hf.space`), `VOICE_STUDIO_URL` (`https://javiertarazon-voice-studio-agent.hf.space`), `HF_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`.
+   - En `02_render_remotion.ipynb`: `API_BASE_URL`, `WORKER_API_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`.
 
    Crea `HF_TOKEN` en Hugging Face como token de solo lectura que tenga acceso a tus dos Spaces privados. No compartas ese token en el chat. Los Spaces ya desplegados son privados y usan ZeroGPU, que puede poner las solicitudes en cola y limitar la cuota diaria.
 
-6. Abre ambos notebooks en Google Colab y ejecuta sus celdas desde arriba. Deja la ultima celda ejecutandose en cada runtime: los workers consultan sus respectivas colas cada 30 segundos y siguen esperando trabajos hasta que detengas la celda. Colab gratuito puede desconectar o limitar runtimes; no es un worker 24/7. Si reinicias el tunel, actualiza `API_BASE_URL` en Secrets y vuelve a ejecutar la celda de configuracion.
+7. Abre ambos notebooks en Google Colab y ejecuta sus celdas desde arriba. Deja la ultima celda ejecutandose en cada runtime: los workers consultan las colas cada 30 segundos y publican la etapa actual en el dashboard. Colab gratuito puede desconectar o limitar runtimes; no es un worker 24/7. Si reinicias el tunel, actualiza `API_BASE_URL` en Secrets y vuelve a ejecutar la celda de configuracion.
 
-7. Abre `http://localhost:3001`, crea un trabajo con tema y URL publica del articulo. La API lo deja en `queued` para `research`; el worker 01 lo investiga, genera guion y audio y, al completar, la API crea automaticamente otro trabajo `queued` para `render`. El worker 02 produce el MP4. El dashboard consulta la cola automaticamente cada 10 segundos. Comprueba estados y errores en esa pagina.
+8. Abre `http://localhost:3001`, crea un trabajo con tema, selecciona las redes y, opcionalmente, agrega una URL de referencia o una voz/fondo propio. El worker busca páginas públicas indexadas con ScrapeGraphAI y DuckDuckGo; no requiere credenciales de esas redes. El dashboard muestra etapa, porcentaje, fuentes extraídas y el resultado o bloqueo por plataforma. La cobertura depende de la indexación y del acceso anónimo permitido por cada sitio; no se evaden inicios de sesión, CAPTCHA ni controles. Al completar investigación y voz, la API crea el trabajo de render. El MP4 final se obtiene mediante un enlace firmado temporal.
 
-8. Al terminar, detene las celdas de Colab con el boton Stop y apaga el tunel con el comando del paso 2. No apagues Docker mientras haya trabajos activos. Para produccion/migracion, se conserva el mismo API, esquema y almacenamiento S3; se cambia el endpoint temporal por un dominio fijo con HTTPS y se despliegan API y base de datos en el VPS.
+9. Al terminar, detene las celdas de Colab con el boton Stop y apaga el tunel con el comando del paso 2. No apagues Docker mientras haya trabajos activos. Para produccion/migracion, se conserva el mismo API, esquema y almacenamiento S3; se cambia el endpoint temporal por un dominio fijo con HTTPS y se despliegan API y base de datos en el VPS.
 
 Para iniciar Mixpost Lite (edición MIT) junto con sus servicios aislados de MySQL y Redis:
 
@@ -110,27 +113,35 @@ Abre `http://localhost:3002` para completar la configuración inicial de Mixpost
 
 El adaptador Postiz anterior se conserva en el repositorio, pero ya no forma parte del Compose ni del flujo del dashboard; la programación de este MVP se realiza manualmente en Mixpost.
 
+## Progreso del pipeline y medios locales
+
+La API persiste `progress.stage`, `progress.message` y `progress.percent` en cada trabajo. Los workers Colab actualizan esos datos con un endpoint protegido por el token del worker y su lease. El dashboard los consulta cada 10 segundos y muestra el módulo, la etapa, el porcentaje y errores por trabajo. Una investigación completada genera automáticamente un trabajo separado de render.
+
+El dashboard permite seleccionar una carpeta desde el navegador e importar WAV, MP4, JPG, PNG y WEBP al bucket R2 configurado. La API registra sus metadatos en PostgreSQL y sube el archivo con las credenciales S3 locales. El worker de investigación usa una muestra WAV con transcripción para clonación zero-shot; el de render usa un MP4 o una imagen seleccionados como fondo. Los objetos quedan privados y los notebooks reciben claves internas, no enlaces públicos. Límite actual de carga: 250 MB por archivo.
+
+Para habilitar la biblioteca local, completa `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY` en `.env`, con permisos de lectura/escritura de objetos en el bucket. En Colab repite esas cuatro variables en Secrets. La API está ligada a `127.0.0.1`; el worker gateway no expone la biblioteca ni los endpoints del dashboard. Las operaciones de clonación deben usar una voz propia o con autorización; el formulario solicita la transcripción exacta y una confirmación.
+
 Para apagar los servicios locales: `docker compose --profile scheduler --env-file .env -f infra/docker-compose.yml down`. Los datos de PostgreSQL y Mixpost se mantienen en volúmenes Docker.
 
 ## Hugging Face Spaces
 
 Clona primero VoiceStudio con `python scripts/clone_third_party.py`. Instala la CLI `hf` en WSL (`uv tool install huggingface_hub`) e inicia sesion (`hf auth login`) con un token que permita crear Spaces y subir archivos. La cuenta debe ser elegible para ZeroGPU; las cuentas gratuitas requieren correo verificado y mas de 30 dias de antiguedad, y tienen cuota diaria. Ejecuta `bash scripts/deploy_hf_spaces.sh`: crea/actualiza `voice-studio-agent` como Space privado Gradio con hardware `zero-a10g` (el identificador de ZeroGPU en la CLI actual) y publica la app. No se selecciona T4 ni hardware facturable. Tras publicar, `hf spaces zero-gpu quota` consulta el saldo diario.
 
-El Space carga el modelo `k2-fsa/OmniVoice` mediante el paquete del repositorio VoiceStudio y reserva ZeroGPU solo durante cada inferencia. El endpoint Gradio es `/predict`; llama con `gradio_client` y un token HF de solo lectura. Añade `VOICE_STUDIO_URL` y `HF_TOKEN` a `.env` para el cliente local, y guarda `HF_TOKEN` como secreto de Colab para invocar el Space privado. La cuota gratuita de ZeroGPU es limitada (5 minutos diarios segun las condiciones publicadas por Hugging Face); la cola y descarga inicial del modelo pueden hacer el servicio lento. No se afirma que el Space este publicado hasta completar el inicio de sesion y el build en tu cuenta.
+El Space carga el modelo `k2-fsa/OmniVoice` mediante el paquete del repositorio VoiceStudio y reserva ZeroGPU solo durante cada inferencia. El endpoint Gradio `/predict` recibe texto y atributos de voz, y opcionalmente una muestra WAV más su transcripción exacta para clonación zero-shot. Llama con `gradio_client` y un token HF de solo lectura. Añade `VOICE_STUDIO_URL` y `HF_TOKEN` a `.env` para el cliente local, y guarda `HF_TOKEN` como secreto de Colab para invocar el Space privado. Cada inferencia solicita como máximo 120 segundos de GPU; Hugging Face puede multiplicar la reserva efectiva según el hardware y rechazar la llamada si no queda cuota suficiente. Una prueba de síntesis de texto devolvió WAV válido de 24 kHz; la clonación con muestra propia y el flujo Colab aún requieren una prueba end-to-end.
 
 Para generar investigación editorial y guiones, `apps/script-generator-space` carga `Qwen/Qwen3-4B` de forma diferida en ZeroGPU. Inicia sesión con `hf auth login` y ejecuta `bash scripts/deploy_hf_script_space.sh`; el script crea un Space privado `marketing-script-generator` con hardware `zero-a10g`. Configura `SCRIPT_SPACE_URL` con la URL asignada y guarda un token HF de solo lectura en el secreto `HF_TOKEN` de Colab. El Space usa el mismo token que el Space de voz. Revisa el build antes de usarlo; no se despliega automáticamente ni se ha verificado la elegibilidad/cuota de tu cuenta.
 
-ZeroGPU gratuito tiene cuota diaria y colas, no es inferencia ilimitada ni un SLA. Las condiciones de elegibilidad y cuota pueden cambiar; verifica la disponibilidad desde tu cuenta Hugging Face. La extracción del artículo web se hace con `requests` y BeautifulSoup en Colab; el Space recibe el texto extraído y produce notas de investigación y un guion en una única inferencia. Qwen no garantiza exactitud factual: revisa el guion y las fuentes antes de publicar. No se usa OpenAI.
+ZeroGPU gratuito tiene cuota diaria y colas, no es inferencia ilimitada ni un SLA. Las condiciones de elegibilidad y cuota pueden cambiar; verifica la disponibilidad desde tu cuenta Hugging Face. El worker usa la biblioteca open-source ScrapeGraphAI (`search_on_web`) para buscar con DuckDuckGo páginas públicas de las redes elegidas; descarga las páginas accesibles con `requests` y BeautifulSoup. Si una página no es legible, puede utilizar únicamente el fragmento público que devuelve el índice de DuckDuckGo y lo etiqueta como tal en el dashboard. Esta búsqueda no usa APIs ni credenciales de YouTube, Reddit, X, Instagram, TikTok o Facebook. Puede omitir publicaciones no indexadas, devolver resultados antiguos, encontrar perfiles/páginas de negocio en lugar de publicaciones o no acceder a páginas dinámicas/privadas; no equivale a escucha social en tiempo real ni a métricas de tendencias. Los estados por plataforma muestran páginas extraídas, fragmentos, ausencia de contenido legible o errores. El Space Qwen recibe el texto recopilado y produce notas y guion en una inferencia; no garantiza exactitud factual, así que revisa fuentes y guion antes de publicar. No se usa OpenAI.
 
 No publico HyperFrames ni Open-Generative-AI como Spaces Gradio falsos: ambos repos son frameworks/apps, no inferencia Gradio. HyperFrames/Remotion se usan en Colab para render; Open-Generative-AI es una app web/Electron independiente.
 
 ## Google Colab
 
-Abre `notebooks/01_research_scrapegraph.ipynb` o `notebooks/02_render_remotion.ipynb` en Colab con la cuenta `javiertarazpon@gmail.com` (sube los archivos desde tu equipo o clona este repositorio despues de publicarlo en GitHub). Este proyecto no recibe acceso a tu Drive ni a tu cuenta. Guarda secretos en **Secrets** de Colab, no en celdas compartidas. Ambos notebooks necesitan `API_BASE_URL`, `WORKER_API_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` y `STORAGE_PUBLIC_BASE_URL`. El notebook de investigación también necesita `SCRIPT_SPACE_URL`, `VOICE_STUDIO_URL` y un `HF_TOKEN` de solo lectura con acceso a ambos Spaces privados. Investiga y genera el guion mediante Qwen en ZeroGPU, llama a VoiceStudio por Gradio, sube WAV a S3/R2 y encola el render; el segundo notebook renderiza MP4 con una composición Remotion básica y lo sube al bucket.
+Abre `notebooks/01_research_scrapegraph.ipynb` o `notebooks/02_render_remotion.ipynb` en Colab con la cuenta `javiertarazpon@gmail.com` (sube los archivos desde tu equipo o clona este repositorio despues de publicarlo en GitHub). Este proyecto no recibe acceso a tu Drive ni a tu cuenta. Guarda secretos en **Secrets** de Colab, no en celdas compartidas. Ambos notebooks necesitan `API_BASE_URL`, `WORKER_API_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`. El notebook de investigación también necesita `SCRIPT_SPACE_URL`, `VOICE_STUDIO_URL` y un `HF_TOKEN` de solo lectura con acceso a ambos Spaces privados. Investiga y genera el guion mediante Qwen en ZeroGPU, llama a VoiceStudio por Gradio con la opción de usar una muestra de voz, sube WAV a R2 privado y encola el render; el segundo notebook descarga el audio y los medios propios para componer el MP4.
 
 Los notebooks mantienen workers de polling mientras sus celdas y runtimes sigan activos. Un Quick Tunnel permite que Colab consulte durante pruebas la API propia de WSL mediante HTTPS temporal; no mantiene el equipo despierto ni elude las restricciones/cuotas de Colab.
 
-El notebook de investigación requiere `API_BASE_URL`, `WORKER_API_TOKEN` y una `source_url` por trabajo. El de render requiere un proyecto Remotion, configuración S3/R2 y el mismo API público. Remotion y HyperFrames son frameworks de render, no Spaces de generación de imágenes; el pipeline necesita una composición/plantilla real.
+El notebook de investigación requiere `API_BASE_URL`, `WORKER_API_TOKEN`, `SCRIPT_SPACE_URL`, `VOICE_STUDIO_URL`, `HF_TOKEN` y credenciales S3/R2 para el resto del pipeline. La URL de referencia es opcional: con ella se analiza esa página y las redes seleccionadas; sin ella, se buscan las plataformas elegidas (o todas si no se selecciona ninguna). La búsqueda social pública usa ScrapeGraphAI con DuckDuckGo, sin claves de plataforma, e informa resultados, bloqueos y errores por plataforma en el dashboard. Esto no garantiza publicaciones recientes ni acceso anónimo a todas las redes. El notebook de render requiere un proyecto Remotion, configuración S3/R2 y el mismo API público. Remotion y HyperFrames son frameworks de render, no Spaces de generación de imágenes; el pipeline necesita una composición/plantilla real.
 
 ## Pruebas
 

@@ -5,6 +5,7 @@ from packages.python.core.schemas import (
     ContentRequest,
     JobCreate,
     JobRecord,
+    JobProgress,
     JobStatus,
     WorkerType,
 )
@@ -22,6 +23,19 @@ def test_content_request_uses_independent_platform_lists() -> None:
 def test_content_request_rejects_invalid_duration() -> None:
     with pytest.raises(ValidationError):
         ContentRequest(topic="Tema", duration_seconds=0)
+
+
+def test_content_request_accepts_supported_social_platforms() -> None:
+    request = ContentRequest(topic="Tema", platforms=["youtube", "reddit"])
+
+    assert request.model_dump(mode="json")["platforms"] == ["youtube", "reddit"]
+
+
+def test_content_request_rejects_unsupported_or_repeated_platforms() -> None:
+    with pytest.raises(ValidationError):
+        ContentRequest(topic="Tema", platforms=["linkedin"])
+    with pytest.raises(ValidationError):
+        ContentRequest(topic="Tema", platforms=["youtube", "youtube"])
 
 
 def test_job_create_requires_supported_worker() -> None:
@@ -56,3 +70,23 @@ def test_job_record_preserves_render_fields_in_request() -> None:
     )
 
     assert record.model_dump(mode="json")["request"] == request
+    assert record.progress["stage"] == "queued"
+
+
+def test_voice_reference_requires_transcript_and_authorization() -> None:
+    voice_asset_id = "f2810a6b-75e3-49fd-b7d9-9d6cbef8502e"
+    with pytest.raises(ValidationError):
+        ContentRequest(topic="Tema", voice_reference_asset_id=voice_asset_id)
+
+    request = ContentRequest(
+        topic="Tema",
+        voice_reference_asset_id=voice_asset_id,
+        voice_reference_transcript="Texto exacto de muestra",
+        voice_clone_authorized=True,
+    )
+    assert request.voice_reference_asset_id is not None
+
+
+def test_job_progress_rejects_percent_out_of_range() -> None:
+    with pytest.raises(ValidationError):
+        JobProgress(stage="rendering", message="Renderizando", percent=101)

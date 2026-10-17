@@ -1,24 +1,66 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
 type Job = {
   job_id: string;
   worker: "research" | "render";
   status: string;
   request: { topic: string };
-  output: { video_url?: string } | null;
+  progress: { stage: string; message: string; percent: number };
+  output: {
+    research?: {
+      source?: string;
+      notes?: string;
+      sources?: Array<{ platform: string; source_type?: string; title: string; url: string }>;
+      platform_status?: Array<{
+        platform: string;
+        status: string;
+        result_count: number;
+        message?: string;
+      }>;
+    };
+    script?: string;
+    audio_object_key?: string;
+    audio_url?: string;
+    video_object_key?: string;
+    video_url?: string;
+  } | null;
   error: string | null;
+};
+
+type Asset = {
+  asset_id: string;
+  asset_type: "voice" | "video" | "image";
+  original_name: string;
+  content_type: string;
+  size_bytes: number;
 };
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const mixpostUrl = process.env.NEXT_PUBLIC_MIXPOST_URL ?? "http://localhost:3002";
+const RESEARCH_PLATFORMS = [
+  { value: "youtube", label: "YouTube" },
+  { value: "reddit", label: "Reddit" },
+  { value: "x", label: "X" },
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "facebook", label: "Facebook" },
+];
 
 export default function Dashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [topic, setTopic] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [platforms, setPlatforms] = useState(RESEARCH_PLATFORMS.map(({ value }) => value));
+  const [voiceAssetId, setVoiceAssetId] = useState("");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceCloneAuthorized, setVoiceCloneAuthorized] = useState(false);
+  const [visualAssetId, setVisualAssetId] = useState("");
   const [message, setMessage] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const folderInput = useRef<HTMLInputElement>(null);
 
   async function refreshJobs() {
     const response = await fetch(`${apiBase}/v1/jobs`, { cache: "no-store" });
@@ -26,16 +68,81 @@ export default function Dashboard() {
     setJobs((await response.json()) as Job[]);
   }
 
+  async function refreshAssets() {
+    const response = await fetch(`${apiBase}/v1/assets`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Biblioteca de medios: HTTP ${response.status}`);
+    setAssets((await response.json()) as Asset[]);
+  }
+
   useEffect(() => {
-    const refresh = () => refreshJobs().catch((error: Error) => setMessage(error.message));
+    folderInput.current?.setAttribute("webkitdirectory", "");
+    folderInput.current?.setAttribute("directory", "");
+    const refresh = () => {
+      Promise.all([refreshJobs(), refreshAssets()]).catch((error: Error) => setMessage(error.message));
+    };
     refresh();
     const interval = window.setInterval(refresh, 10_000);
     return () => window.clearInterval(interval);
   }, []);
 
+  async function uploadFolder(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    setIsUploading(true);
+    setMessage(`Importando ${files.length} archivo(s) a R2 privado...`);
+    let uploaded = 0;
+    try {
+      for (const file of files) {
+        const extension = file.name.split(".").pop()?.toLowerCase();
+        const assetType =
+          extension === "wav" ? "voice" :
+          extension === "mp4" ? "video" :
+          ["jpg", "jpeg", "png", "webp"].includes(extension ?? "") ? "image" : null;
+        if (!assetType) {
+          throw new Error(`Formato no admitido: ${file.name}. Se omiten formatos distintos de WAV, MP4, JPG, PNG y WEBP.`);
+        }
+        const formData = new FormData();
+        formData.set("asset_type", assetType);
+        formData.set("file", file);
+        const response = await fetch(`${apiBase}/v1/assets`, { method: "POST", body: formData });
+        if (!response.ok) {
+          const detail = (await response.json()) as { detail?: string };
+          throw new Error(`${file.name}: ${detail.detail ?? `HTTP ${response.status}`}`);
+        }
+        uploaded += 1;
+        setMessage(`Importados ${uploaded} de ${files.length} archivo(s)...`);
+      }
+      await refreshAssets();
+      setMessage(`${uploaded} medio(s) importados en R2 privado.`);
+    } catch (error) {
+      setMessage(
+        `${uploaded} archivo(s) importados antes del error: ${
+          error instanceof Error ? error.message : "No se pudo importar la carpeta."
+        }`,
+      );
+      try {
+        await refreshAssets();
+      } catch (refreshError) {
+        setMessage(
+          `${uploaded} archivo(s) importados antes del error. No se pudo actualizar la biblioteca: ${
+            refreshError instanceof Error ? refreshError.message : "error desconocido"
+          }`,
+        );
+      }
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
   async function submitJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
+    if (voiceAssetId && (!voiceTranscript.trim() || !voiceCloneAuthorized)) {
+      setMessage("Para clonar la voz, indica la transcripción exacta y confirma que tienes autorización.");
+      return;
+    }
     try {
       const response = await fetch(`${apiBase}/v1/jobs`, {
         method: "POST",
@@ -44,10 +151,14 @@ export default function Dashboard() {
           worker: "research",
           request: {
             topic,
-            source_url: sourceUrl,
+            source_url: sourceUrl.trim() || null,
             style: "financial-news",
             duration_seconds: 35,
-            platforms: [],
+            platforms,
+            voice_reference_asset_id: voiceAssetId || null,
+            voice_reference_transcript: voiceAssetId ? voiceTranscript : null,
+            voice_clone_authorized: voiceAssetId ? voiceCloneAuthorized : false,
+            visual_asset_id: visualAssetId || null,
           },
         }),
       });
@@ -57,7 +168,9 @@ export default function Dashboard() {
       }
       setTopic("");
       setSourceUrl("");
-      setMessage("Trabajo creado.");
+      setVoiceTranscript("");
+      setVoiceCloneAuthorized(false);
+      setMessage("Trabajo creado; esperando que los workers tomen cada módulo.");
       await refreshJobs();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo crear el trabajo.");
@@ -67,34 +180,194 @@ export default function Dashboard() {
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 32 }}>
       <h1>Marketing Content OS</h1>
-      <p>Cola de investigacion y renderizado; se actualiza cada 10 segundos.</p>
+      <p>Seguimiento de investigación y renderizado; se actualiza cada 10 segundos.</p>
       <p><a href={mixpostUrl} target="_blank" rel="noreferrer">Abrir Mixpost Lite para programar contenido</a></p>
+      <section style={{ border: "1px solid #ccc", padding: 16, margin: "24px 0" }}>
+        <h2>Biblioteca local de medios</h2>
+        <p>
+          Selecciona una carpeta para importar WAV, MP4, JPG, PNG o WEBP. Los archivos se guardan en R2
+          privado; la muestra de voz requiere su transcripción exacta.
+        </p>
+        <input
+          ref={folderInput}
+          type="file"
+          multiple
+          accept=".wav,.mp4,.jpg,.jpeg,.png,.webp"
+          aria-label="Importar carpeta local de medios"
+          onChange={uploadFolder}
+          disabled={isUploading}
+        />
+        <ul>
+          {assets.map((asset) => (
+            <li key={asset.asset_id}>
+              {asset.asset_type}: {asset.original_name} ({(asset.size_bytes / (1024 * 1024)).toFixed(1)} MB)
+            </li>
+          ))}
+        </ul>
+      </section>
       <form onSubmit={submitJob} style={{ display: "grid", gap: 8, margin: "24px 0" }}>
         <input aria-label="Tema del contenido" required value={topic}
           onChange={(event) => setTopic(event.target.value)} placeholder="Tema del contenido"
           style={{ padding: 10 }} />
-        <input aria-label="URL de referencia" type="url" required value={sourceUrl}
+        <label htmlFor="source-url">URL de referencia opcional</label>
+        <input id="source-url" aria-label="URL de referencia opcional" type="url" value={sourceUrl}
           onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://sitio.com/articulo"
           style={{ padding: 10 }} />
+        <fieldset style={{ display: "grid", gap: 8 }}>
+          <legend>Buscar contenido público sin claves de redes sociales</legend>
+          <small>
+            ScrapeGraphAI consulta DuckDuckGo y analiza páginas accesibles públicamente.
+            Los resultados dependen de la indexación y del acceso anónimo de cada red.
+          </small>
+          {RESEARCH_PLATFORMS.map((platform) => (
+            <label key={platform.value}>
+              <input
+                type="checkbox"
+                checked={platforms.includes(platform.value)}
+                onChange={() => setPlatforms((current) =>
+                  current.includes(platform.value)
+                    ? current.filter((value) => value !== platform.value)
+                    : [...current, platform.value]
+                )}
+              />
+              {" "}{platform.label}
+            </label>
+          ))}
+        </fieldset>
+        <label>
+          Voz clonada (muestra WAV)
+          <select value={voiceAssetId} onChange={(event) => setVoiceAssetId(event.target.value)}>
+            <option value="">Voz del modelo</option>
+            {assets.filter((asset) => asset.asset_type === "voice").map((asset) => (
+              <option key={asset.asset_id} value={asset.asset_id}>{asset.original_name}</option>
+            ))}
+          </select>
+        </label>
+        {voiceAssetId && (
+          <>
+            <label htmlFor="voice-transcript">Transcripción exacta de la muestra de voz</label>
+            <textarea
+              id="voice-transcript"
+              required
+              value={voiceTranscript}
+              onChange={(event) => setVoiceTranscript(event.target.value)}
+              maxLength={5000}
+              rows={3}
+            />
+            <label>
+              <input
+                type="checkbox"
+                checked={voiceCloneAuthorized}
+                onChange={(event) => setVoiceCloneAuthorized(event.target.checked)}
+              />
+              Confirmo que soy titular de esta voz o tengo autorización para clonarla.
+            </label>
+          </>
+        )}
+        <label>
+          Fondo propio para el video
+          <select value={visualAssetId} onChange={(event) => setVisualAssetId(event.target.value)}>
+            <option value="">Usar fondo generado</option>
+            {assets.filter((asset) => asset.asset_type !== "voice").map((asset) => (
+              <option key={asset.asset_id} value={asset.asset_id}>
+                {asset.asset_type}: {asset.original_name}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="submit" style={{ padding: "10px 16px" }}>Crear trabajo</button>
       </form>
       {message && <p role="status">{message}</p>}
-      <h2>Trabajos recientes</h2>
+      <h2>Progreso por módulo</h2>
       <button type="button" onClick={() => refreshJobs().catch((error: Error) => setMessage(error.message))}>
         Actualizar
       </button>
       <ul>
         {jobs.map((job) => (
           <li key={job.job_id} style={{ margin: "16px 0" }}>
-            <strong>{job.request.topic}</strong> — {job.worker} — {job.status}
+            <strong>{job.request.topic}</strong> — módulo {job.worker} — {job.status}
+            <p>{job.progress.message}</p>
+            <progress
+              aria-label={`Progreso de ${job.worker}`}
+              max={100}
+              value={job.progress.percent}
+              style={{ width: "100%", height: 16 }}
+            />
+            <small>{job.progress.stage} · {job.progress.percent}%</small>
             {job.error && <p role="alert">{job.error}</p>}
-            {job.worker === "render" && job.status === "succeeded" && job.output?.video_url && (
-              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                <a href={job.output.video_url} target="_blank" rel="noreferrer">Ver video renderizado</a>
-                <a href={job.output.video_url} download>Descargar MP4 para Mixpost</a>
-                <a href={mixpostUrl} target="_blank" rel="noreferrer">
-                  Revisar y programar manualmente en Mixpost Lite
-                </a>
+            {job.worker === "research" && job.status === "succeeded" && job.output && (
+              <details style={{ marginTop: 8 }}>
+                <summary>Ver investigación y guion</summary>
+                {job.output.research?.source && <p>Fuente: {job.output.research.source}</p>}
+                {job.output.research?.notes && <p>{job.output.research.notes}</p>}
+                {job.output.research?.sources && (
+                  <section>
+                    <strong>Fuentes extraídas</strong>
+                    <ul>
+                      {job.output.research.sources.map((source) => (
+                        <li key={`${source.platform}-${source.url}`}>
+                          {source.platform}: <a href={source.url} target="_blank" rel="noreferrer">
+                            {source.title || source.url}
+                          </a>
+                          {source.source_type === "search_snippet" ? " (fragmento indexado, no el post completo)" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {job.output.research?.platform_status && (
+                  <section>
+                    <strong>Resultado por plataforma</strong>
+                    <ul>
+                      {job.output.research.platform_status.map((status) => (
+                        <li key={status.platform}>
+                          {status.platform}: {status.status} ({status.result_count} fuentes)
+                          {status.message ? ` — ${status.message}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {job.output.script && <p><strong>Guion:</strong> {job.output.script}</p>}
+              </details>
+            )}
+            {job.worker === "research" && job.status === "succeeded" &&
+              (job.output?.audio_object_key || job.output?.audio_url) && (
+              <div style={{ marginTop: 8 }}>
+                <p><strong>Narración de voz generada:</strong></p>
+                <audio
+                  controls
+                  src={job.output.audio_url ?? `${apiBase}/v1/jobs/${job.job_id}/media/audio`}
+                  style={{ width: "100%", marginTop: 4 }}
+                />
+              </div>
+            )}
+            {job.worker === "render" && job.status === "succeeded" &&
+              (job.output?.video_object_key || job.output?.video_url) && (
+              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                <p><strong>Video final listo para revisión y publicación:</strong></p>
+                <video
+                  controls
+                  src={job.output.video_url ?? `${apiBase}/v1/jobs/${job.job_id}/media/video`}
+                  style={{ width: "100%", maxHeight: 420, borderRadius: 8, background: "#000" }}
+                />
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <a
+                    href={job.output.video_url ?? `${apiBase}/v1/jobs/${job.job_id}/media/video`}
+                    download
+                    style={{ padding: "8px 14px", background: "#0070f3", color: "#fff", borderRadius: 4, textDecoration: "none" }}
+                  >
+                    Descargar MP4
+                  </a>
+                  <a
+                    href={mixpostUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ padding: "8px 14px", background: "#10b981", color: "#fff", borderRadius: 4, textDecoration: "none" }}
+                  >
+                    Aprobar y Programar en Mixpost Lite
+                  </a>
+                </div>
               </div>
             )}
           </li>

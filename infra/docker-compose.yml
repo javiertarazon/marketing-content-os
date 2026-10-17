@@ -53,6 +53,17 @@ services:
     depends_on:
       - api
 
+  publisher:
+    build:
+      context: ../apps/publisher-service
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      - api
+
   worker-gateway:
     image: nginx:1.27-alpine
     profiles: ["colab-tunnel"]
