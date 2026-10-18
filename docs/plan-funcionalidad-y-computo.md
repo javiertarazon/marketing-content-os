@@ -3,6 +3,24 @@
 **Fecha:** 18 de octubre de 2026
 **Objetivo:** hacer confiable el recorrido desde investigación hasta MP4 con un PC de recursos modestos y sin GPU local, priorizando funcionalidad y pruebas reproducibles. La revisión y las correcciones de seguridad se ejecutan como etapa posterior, antes de publicar servicios.
 
+## Estado real y definición de “listo” (actualización 18-oct-2026)
+
+La base local y los servicios HF tienen pruebas aisladas documentadas: API/dashboard/PostgreSQL, operación S3/R2 temporal, guion Qwen CPU y TTS de catálogo OmniVoice CPU. La API registra workers y el dashboard muestra presencia; los notebooks tienen polling continuo mientras Colab está iniciado. **No se ha completado una tarea real de Colab, no se ha validado clonación con muestra autorizada, no existe MP4 final inspeccionado y no se ha implementado aprobación persistente con publicación automática.** No reportar “100% funcional” ni inferir calidad de video a partir de configuración o de un WAV corto.
+
+### Puertas de aceptación en orden
+
+| Puerta | Acción | Evidencia de aceptación |
+|---|---|---|
+| 1. Conectividad de workers | Arrancar la API/túnel local, configurar en Colab Secrets URL HTTPS vigente, `WORKER_API_TOKEN`, `HF_TOKEN` de lectura y S3/R2; iniciar ambos notebooks. | Ambos workers visibles como conectados, heartbeat renovado y reserva/finalización de un job de prueba. No escribir valores de secretos en el repositorio/logs. |
+| 2. Investigación y guion | Crear desde el dashboard un tema acotado; ejecutar búsqueda y Qwen mediante el worker conectado. | Job conserva fuentes/URL/fecha y resultados por plataforma; guion estructurado, revisable y sin presentar inferencias como hechos. |
+| 3. Voz genérica | Generar texto breve primero y un guion normal después con OmniVoice CPU. | WAV guardado en R2, sample rate/duración medidos, reproducción inteligible; tiempo y errores visibles en job. |
+| 4. Clonación autorizada | Repetir con audio de voz propia o con permiso y transcripción exacta; comparar con TTS genérico. | Voz escuchada y aprobada por el usuario; guardar solo metadatos mínimos y no publicar la muestra de referencia. |
+| 5. Video | Ejecutar worker Remotion, obtener MP4 desde R2 y reproducirlo de principio a fin. | Validar resolución vertical, fps, H.264/AAC, duración frente al WAV, tamaño, sincronía de segmentos, legibilidad de captions, composición y nivel/clipping de audio. Anotar defectos subjetivos y corregirlos; parámetros declarados no sustituyen inspección. |
+| 6. Revisión humana | Añadir estados persistentes pendiente/aprobado/rechazado al artefacto exacto (versión/hash); el dashboard debe impedir publicación antes de aprobar. | Decisión, fecha/usuario, comentarios y versión revisada trazables; rechazar evita publicación. Actualmente el botón/enlace a Mixpost solo abre el servicio. |
+| 7. Publicación | Elegir Mixpost o Postiz; completar OAuth de una cuenta de prueba y el mecanismo de transferencia del MP4 privado. | Publicación de prueba, ID/URL remotos, estado/error e idempotencia. Esto requiere credenciales y puede requerir dominio HTTPS estable. No se hace automáticamente en el estado actual. |
+
+El hito “video para aprobación” queda alcanzado solo tras puertas 1–5 y revisión del MP4. “Aprobado y publicado” requiere además puertas 6–7. Colab gratuito no puede ser iniciado ni mantenido automáticamente por la app local: el worker toma trabajos automáticamente solo mientras la sesión manual siga conectada.
+
 ## 1. Decisión de arquitectura
 
 Mantener el PC como plano de control liviano (dashboard, API y PostgreSQL), guardar medios en R2 privado y ejecutar cómputo en Colab gratuito cuando las sesiones estén activas. Los notebooks mantienen polling continuo y el dashboard muestra su presencia; cada runtime debe iniciarse manualmente y puede desconectarse. No tratar Colab ni un Space gratuito como servidores permanentes. Los Spaces ZeroGPU mantienen el hardware actual, pero usan CPU con dos hilos por defecto y no llaman `@spaces.GPU`; esto preserva el saldo diario. La CPU será lenta, especialmente para OmniVoice. `USE_ZEROGPU=1` es el opt-in explícito si se necesita acelerar y se acepta consumir cuota.

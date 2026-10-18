@@ -4,6 +4,26 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 
 > MVP: API/cola, Spaces privados de voz y guiones, dos notebooks de Colab y programación manual en Mixpost Lite. Requiere configurar cuentas, claves y almacenamiento.
 
+## Estado real de preparación end-to-end (18-oct-2026)
+
+**El producto todavía no está validado como un generador automático de video listo para publicar.** Hay componentes funcionales probados por separado, pero no existe una evidencia reproducible de un video final hecho por el pipeline completo ni de su publicación social.
+
+| Etapa | Estado real | Evidencia / límite |
+|---|---|---|
+| Dashboard, API, PostgreSQL y control local | Verificado en pruebas registradas | Build/HTTP local y ciclo API/PostgreSQL comprobados; el dashboard crea y muestra trabajos. |
+| HF Qwen en CPU | Verificado por separado | Qwen3-1.7B generó salida estructurada en ~19 s en la prueba documentada. |
+| TTS de catálogo OmniVoice en CPU | Verificado por separado | WAV mono 24 kHz, ~3.48 s, generado en ~39 s en la prueba documentada. Esto no demuestra clonación. |
+| R2 privado | Verificado por separado | Subida, HEAD, descarga firmada temporal y limpieza de archivo de prueba. |
+| Workers Colab | Bucle y panel implementados; sin conexión E2E | Los notebooks hacen polling continuo mientras se ejecutan, pero cada runtime se inicia manualmente. No hay sesión conectada ni trabajo real completado registrado. |
+| Scraping → guion → voz con un trabajo del dashboard | Pendiente de prueba real | La búsqueda depende de indexación pública; no acredita métricas virales ni acceso a todas las redes. |
+| Clonación de una voz propia/autorizada | Pendiente | La ruta con muestra WAV y transcripción existe; falta generar y escuchar un resultado con una muestra autorizada. |
+| Render y calidad de MP4 | Pendiente | No hay MP4 final del pipeline inspeccionado en este estado. Resolución/códecs configurados no equivalen a calidad visual validada. |
+| Aprobación y publicación | No automatizadas | El dashboard enlaza Mixpost para carga/programación manual. No guarda aprobación ni dispara publicación al aprobar. Postiz no está conectado al flujo. |
+
+**Siguiente hito aceptable:** una corrida desde el dashboard que quede visible como completa, use voz de catálogo y después voz clonada autorizada, produzca un MP4 reproducible en R2 que se inspeccione visual y auditivamente, y permita una aprobación humana explícita. La publicación seguirá siendo manual hasta integrar y verificar un proveedor y sus cuentas OAuth. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
+
+**Preparación actual:** componentes aislados disponibles; pipeline completo pendiente. No se asigna porcentaje de finalización porque no hay artefacto E2E aceptado que permita medirlo honestamente. Antes de exponer el API o el publisher a Internet, completar la fase de seguridad descrita en la auditoría.
+
 Auditoría integral vigente de arquitectura, flujo, credenciales, hallazgos y plan de mejora: [docs/auditoria-integral-marketing-content-os.md](./docs/auditoria-integral-marketing-content-os.md). El [plan funcional y de cómputo](./docs/plan-funcionalidad-y-computo.md) detalla correcciones, matriz de pruebas reales, opciones para trabajar sin GPU y el orden para cerrar seguridad. La [auditoría anterior](./docs/auditoria-marketing-content-os.md) conserva las verificaciones históricas del 16 de octubre.
 
 Para retomar el desarrollo desde el estado verificado, consulta el [manifiesto JSON de estado y trazabilidad](./docs/estado-y-trazabilidad-marketing-content-os.json): inventario de módulos, flujo, repositorios, variables de configuración (sin valores secretos), correcciones, pruebas, límites conocidos y próximos pasos para agentes.

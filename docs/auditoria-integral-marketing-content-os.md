@@ -6,6 +6,21 @@
 
 > En esta sesión se ejecutó un ciclo real de API/PostgreSQL y upload/`HEAD`/descarga firmada de prueba en R2, con limpieza de datos temporales; pasaron 28 pruebas, el build Docker y checks HTTP locales. Los dos Spaces privados pasaron generación y TTS en CPU, con `USE_ZEROGPU=0`; el saldo de GPU quedó intacto. No se ejecutó Colab, clonación con voz propia ni render MP4: falta muestra autorizada para clonación y el secreto HF no está configurado en `.env`/Colab. Los valores secretos no se incluyeron en esta auditoría. El detalle está en [plan funcional y de cómputo](./plan-funcionalidad-y-computo.md).
 
+### Estado de preparación y evidencia pendiente (actualización 18-oct-2026)
+
+La actualización de polling/heartbeat de los notebooks y presencia de workers en dashboard está implementada en el commit previo `6ea4496`; las verificaciones locales de API/dashboard y de la ruta protegida quedaron registradas. **No hay todavía una sesión Colab conectada ni una corrida E2E.** Las pruebas aisladas de Qwen, TTS genérico y R2 no prueban por transitividad ni la integración del worker, ni clonación, ni la calidad del video.
+
+| Capacidad solicitada | Situación demostrable hoy | Para considerarla funcional |
+|---|---|---|
+| Investigación de tendencias | Código de búsqueda web indexada y señales opcionales de YouTube | Procesar un trabajo desde Colab; evaluar frescura, enlaces y datos. DuckDuckGo no es escucha social en tiempo real ni confirma viralidad. |
+| Guion | Space Qwen respondió en CPU en prueba directa | Validar contrato, fuentes/afirmaciones y guion en el mismo job iniciado desde dashboard. |
+| TTS y clonación | TTS genérico probado en CPU; ruta zero-shot implementada | Enviar una muestra propia o autorizada, con transcripción exacta; escuchar y aceptar una narración real. |
+| Render de video | Notebook y validaciones de salida implementados | Ejecutar Remotion en Colab, almacenar MP4 y revisar imagen, cortes, audio, subtítulos y sincronía. No hay MP4 aceptado actualmente. |
+| Aprobación | El dashboard permite previsualizar/descargar y tiene enlace a Mixpost | Crear estado persistente pendiente/aprobado/rechazado y registrar actor/fecha/versión aprobada. El enlace actual a Mixpost no es aprobación registrada. |
+| Publicación | Manual en Mixpost; Postiz no enlazado | Elegir integración, conectar OAuth/cuentas, resolver acceso seguro al MP4 privado, añadir idempotencia/estado y probar en entorno de prueba. No existe publicación automática al aprobar. |
+
+Por tanto, el estado es **MVP parcial con componentes aislados verificados, no flujo automatizado completo**. El detalle secuencial y criterios de aceptación están en [el plan actualizado](./plan-funcionalidad-y-computo.md) y la máquina en [el manifiesto JSON](./estado-y-trazabilidad-marketing-content-os.json).
+
 ## Resumen ejecutivo
 
 El sistema coordina una interfaz local con una API FastAPI y PostgreSQL. Dos notebooks de Google Colab actúan como workers: el primero investiga, solicita un guion a un Space de Qwen, genera voz mediante otro Space y encola el render; el segundo descarga los medios de R2 y produce el MP4 con Remotion. El dashboard permite revisar y descargar el resultado. Mixpost es una herramienta aparte para programación manual; el adaptador Publisher/Postiz está presente, pero no está conectado a ese flujo.
@@ -14,9 +29,9 @@ El repositorio tiene buena separación inicial por aplicaciones y un gateway de 
 
 1. **Autenticación ausente en rutas de usuario de la API.** Los endpoints de alta/listado/consulta/subida y medios no verifican identidad. El túnel actual no los publica y Compose enlaza la API a loopback, pero exponerla detrás de un dominio daría acceso a datos y medios.
 2. **Credenciales con alcance excesivo en Compose.** API y Publisher reciben el `.env` completo; la API no necesita claves de Postiz ni token HF para su función actual, y Publisher no necesita credenciales de base de datos, R2 o worker.
-3. **Configuración del dashboard debe conocerse al compilar.** Next.js incorpora `NEXT_PUBLIC_API_BASE_URL` durante `npm run build`; la imagen y Compose ya pasan ese valor como argumento de construcción. Para un despliegue con dominio hay que definirlo al compilar.
-4. **Render no totalmente reproducible ni sincronizado por palabra.** El notebook aún instala dependencias del sistema en cada runtime y ejecuta `npm install` sin lockfile. Esta revisión mide la duración del WAV para dimensionar el MP4 y repartir captions dentro de esa duración; todavía no alinea subtítulos con timestamps fonéticos.
-5. **No hay evidencia de un ciclo de video completo.** Guion Qwen y TTS OmniVoice ya respondieron por CPU en sus Spaces privados sin descontar cuota GPU, y API/UI, PostgreSQL y R2 están validados. Quedan configurar el secreto de Colab, probar clonación de voz propia y render MP4.
+3. **Configuración del dashboard al compilar (corrección implementada).** Next.js incorpora `NEXT_PUBLIC_API_BASE_URL` durante `npm run build`; Dockerfile y Compose pasan el valor como argumento. Mantener el argumento correcto por entorno al construir una imagen para dominio.
+4. **Render no totalmente reproducible ni sincronizado por palabra.** El notebook aún instala dependencias del sistema en cada runtime y ejecuta `npm install` sin lockfile. La duración del WAV dimensiona el MP4 y captions se reparten dentro de esa duración; todavía no se alinean con timestamps fonéticos.
+5. **No hay evidencia de un ciclo de video completo ni aprobación/publicación integradas.** Guion Qwen y TTS genérico OmniVoice respondieron por CPU en sus Spaces privados sin descontar cuota GPU, y API/UI, PostgreSQL y R2 están validados. Queda conectar Colab, probar voz propia autorizada y MP4; además, no hay estado de aprobación persistente ni disparo automático a redes.
 
 ## Inventario y función real de componentes
 
@@ -101,21 +116,17 @@ flowchart LR
 
 **Acción:** dar a cada contenedor un conjunto explícito mínimo de variables/secrets. Separar secretos por entorno y rotar credenciales si alguna vez se incluyeron en imágenes, logs, notebooks compartidos o commits.
 
-### P1 — `NEXT_PUBLIC_API_BASE_URL` no es configuración de runtime fiable
+### Corregido — `NEXT_PUBLIC_API_BASE_URL` debe configurarse al compilar
 
-El dashboard lee `process.env.NEXT_PUBLIC_API_BASE_URL` (`apps/dashboard/app/page.tsx:40`), pero Compose solo lo define en `environment`; el Dockerfile compila Next con `npm run build` y no declara ese valor como `ARG` antes del build (`apps/dashboard/Dockerfile`, `infra/docker-compose.yml:44–53`). Next inserta variables `NEXT_PUBLIC_*` en el bundle durante la compilación.
+Next.js incorpora `NEXT_PUBLIC_API_BASE_URL` al bundle durante `npm run build`. El Dockerfile y Compose ya pasan este valor como argumento de build.
 
-**Impacto:** la imagen compilada puede quedarse con `http://localhost:8000`, que desde el navegador de una persona remota apunta a su propia máquina. La ruta local funciona por casualidad porque el valor por defecto coincide con localhost.
+**Seguimiento:** establecer el argumento correcto para cada entorno antes de construir la imagen. No es un valor de runtime que pueda cambiarse después de compilar.
 
-**Acción:** usar configuración pública explícita de build y rebuild por ambiente, o implementar lectura de configuración al runtime; validar también `NEXT_PUBLIC_MIXPOST_URL` con el entorno destino.
+### P1 — La relación de pipeline existe, pero falta aprobación persistente
 
-### P1 — Estado del pipeline y asociación entre jobs son ambiguos
+La API ya relaciona el job de render con el job de investigación mediante `parent_job_id` y el dashboard presenta ambos dentro del pipeline. La relación no debe confundirse con un estado de aceptación editorial: el dashboard no guarda una decisión aprobada/rechazada ligada a una versión/hash del MP4. El enlace actual a Mixpost abre el flujo manual y no dispara publicación.
 
-La API genera un job distinto de render y no almacena una clave/ID de job padre. El dashboard presenta trabajos independientes; no hay un estado único de “video completo” para el trabajo original. El research queda `succeeded` antes de que termine el render.
-
-**Impacto:** un operador puede interpretar “completado” como video final, perder la relación entre render e investigación o no saber si un error posterior pertenece al mismo contenido.
-
-**Estado en esta revisión:** `parent_job_id` idempotente, relación del render con el job de investigación y etiqueta común de pipeline implementadas. Sigue pendiente una ficha agregada con estado único (`researching`, `scripting`, `voice`, `rendering`, `ready`, `failed`); actualmente se muestran los jobs por módulo.
+**Acción:** implementar estados de revisión persistentes y transición a publicación solo después de aprobación explícita; conservar historial, versión aprobada, autor/fecha y estado externo de publicación.
 
 ### P1 — Errores de worker pueden marcar un job fallido aun si falla el reporte
 

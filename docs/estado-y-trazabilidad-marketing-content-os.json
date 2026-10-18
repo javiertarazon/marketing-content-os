@@ -7,7 +7,7 @@
     "default_branch_at_snapshot": "main",
     "snapshot_date": "2026-10-18",
     "language": "es",
-    "purpose": "Orquestar investigación de contenido, guion, síntesis/clonación de voz, renderizado de video vertical y revisión/publicación manual con recursos de cómputo remoto y almacenamiento privado."
+    "purpose": "Orquestar investigación de contenido, guion, síntesis/clonación de voz, renderizado de video vertical y revisión/publicación social; el estado actual es parcial y aún no acredita un pipeline end-to-end."
   },
   "continuation_instructions": {
     "read_first": [
@@ -17,36 +17,52 @@
       "docs/plan-funcionalidad-y-computo.md"
     ],
     "working_branch": "main",
-    "working_tree_state_before_publish": "Cambios funcionales y documentación preparados para publicarse en main; los valores reales de .env y secretos remotos se excluyen.",
+    "working_tree_state_before_publish": "Documentación de estado real actualizada en este cambio; confirmar git status/commit antes de continuar. Secretos excluidos.",
     "next_agent_should": [
       "Revisar primero el estado Git y el remoto antes de modificar o desplegar.",
-      "No interpretar generación CPU de Qwen/TTS como validación end-to-end de Colab o render de video.",
-      "Completar los pasos pendientes en orden: Secrets de Colab, prueba research real, clonación autorizada, render MP4 y revisión del artefacto.",
+      "No interpretar inferencia CPU de Qwen/TTS como validación end-to-end de Colab, clonación o render de video.",
+      "Seguir las puertas de aceptación en docs/plan-funcionalidad-y-computo.md: conectar workers, ejecutar research real, probar TTS, clonar voz autorizada, renderizar e inspeccionar MP4, implementar aprobación y luego publicación.",
+      "No afirmar que hay aprobación persistente o publicación automatizada: hoy el enlace abre Mixpost para gestión manual y Postiz no está integrado.",
       "Actualizar este manifiesto y la auditoría después de cambiar arquitectura, configuración, despliegues o evidencia de pruebas.",
       "No copiar tokens, claves S3/R2, contraseñas ni valores de .env a Git, notebooks, logs, documentación o mensajes."
     ]
   },
   "overall_status": {
-    "label": "MVP parcial; componentes locales y Spaces CPU verificados, pipeline completo pendiente",
-    "local_control_plane": "Verificado en la sesión documentada: dashboard, API, PostgreSQL y almacenamiento privado R2; prueba temporal con limpieza.",
-    "script_space": "Space privado activo. Inferencia real Qwen3-1.7B en CPU verificada; configuración predeterminada USE_ZEROGPU=0.",
-    "voice_space": "Space privado activo. Síntesis real de voz en CPU verificada; configuración predeterminada USE_ZEROGPU=0.",
-    "research_worker": "Notebook implementado; aún requiere Secrets de Colab y validación real del ciclo de reserva, investigación, guion, voz y carga de audio.",
-    "voice_cloning": "Ruta de clonación zero-shot implementada con muestra WAV y transcripción exacta; falta probarla con una muestra propia o autorizada.",
-    "video_render": "Notebook Remotion actualizado; no existe evidencia de un MP4 final generado por el flujo completo y revisado visualmente.",
-    "publishing": "Manual mediante Mixpost opcional. Publisher/Postiz no está conectado al flujo del dashboard.",
-    "security": "Auditoría realizada y acciones documentadas; el endurecimiento de autenticación/autorización de usuarios y aislamiento de secretos es trabajo posterior al cierre funcional, según la prioridad acordada. No exponer la API públicamente antes de resolverlo."
+    "label": "MVP parcial; componentes aislados probados, pipeline end-to-end y publicación automatizada pendientes",
+    "local_control_plane": "Dashboard/API/PostgreSQL y smoke R2 documentados como verificados por separado; app local controla trabajos, pero no inicia sesiones Colab gratuitas.",
+    "script_space": "Space privado; inferencia Qwen3-1.7B CPU documentada en ~19 s; prueba aislada, no llamada desde un trabajo Colab E2E.",
+    "voice_space": "Space privado; TTS genérico OmniVoice CPU documentado en WAV mono 24 kHz de ~3.48 s/~39 s. Clonación con voz propia/autorizada no probada.",
+    "research_worker": "Polling/heartbeat implementado y visible en dashboard; sin sesión Colab conectada ni job research real registrado en la evidencia actual.",
+    "voice_cloning": "Ruta zero-shot implementada con muestra WAV/transcripción; requiere prueba autorizada y evaluación auditiva.",
+    "video_render": "Notebook Remotion y validaciones implementados; no hay MP4 final E2E inspeccionado ni aprobado.",
+    "approval": "No hay aprobación persistente asociada a una versión de video; enlace a Mixpost no constituye un registro de aprobación.",
+    "publishing": "Mixpost es manual/opcional; Publisher/Postiz no está conectado al flujo de dashboard ni disparado por aprobación.",
+    "security": "Endurecimiento aplazado hasta terminar flujo funcional según prioridad acordada; no exponer API/publisher públicamente antes de completar fase de seguridad."
   },
   "worker_automation_update": {
-    "status": "implemented_in_code_and_running_locally",
+    "status": "implemented_locally; remote_worker_connection_not_verified",
     "date": "2026-10-18",
     "api": {
-      "worker_heartbeat": {"method":"POST","path":"/v1/workers/heartbeat","auth":"WORKER_API_TOKEN Bearer","allowed_by_quick_tunnel":true},
-      "local_status": {"method":"GET","path":"/v1/workers","auth":"local dashboard/API only; not exposed by gateway","online_window_seconds":90,"session_history_hours":24},
+      "worker_heartbeat": {
+        "method": "POST",
+        "path": "/v1/workers/heartbeat",
+        "auth": "WORKER_API_TOKEN Bearer",
+        "allowed_by_quick_tunnel": true
+      },
+      "local_status": {
+        "method": "GET",
+        "path": "/v1/workers",
+        "auth": "local dashboard/API only; not exposed by gateway",
+        "online_window_seconds": 90,
+        "session_history_hours": 24
+      },
       "persistence": "worker_instances table; session ID, worker type, idle/working/stopped state, current job, stage and last_seen"
     },
     "notebooks": {
-      "files": ["notebooks/01_research_scrapegraph.ipynb", "notebooks/02_render_remotion.ipynb"],
+      "files": [
+        "notebooks/01_research_scrapegraph.ipynb",
+        "notebooks/02_render_remotion.ipynb"
+      ],
       "behavior": "Continuous polling loop; takes queued jobs, reports idle and active heartbeats, retries after errors, sleeps 20 seconds between empty polls.",
       "startup": "User runs notebook cells once per Colab runtime and leaves the final worker cell running.",
       "shutdown": "KeyboardInterrupt attempts to report stopped; an abrupt runtime loss appears offline after 90 seconds.",
@@ -54,9 +70,9 @@
     },
     "dashboard": "Displays research/voice and render workers as connected or disconnected, with active stage/job; polls every 10 seconds.",
     "quick_tunnel": {
-      "current_session_status": "Active at implementation time; retrieve from cloudflared logs; changes when restarted.",
+      "current_session_status": "No asumir vigente; Quick Tunnel cambia al reiniciarse. Leer la URL actual de cloudflared y actualizar API_BASE_URL en Colab Secrets antes de usar.",
       "only_new_public_route": "POST /v1/workers/heartbeat",
-      "verification": "Public heartbeat path returned HTTP 401 without a worker token; local GET /v1/workers returned HTTP 200 with no sessions before notebooks connected."
+      "verification": "La documentación de la sesión anterior registra HTTP 401 sin token en la ruta heartbeat pública y GET /v1/workers HTTP 200 local sin sesiones conectadas en ese momento. No se registra conexión Colab E2E."
     },
     "local_verification": [
       "Docker API and dashboard images rebuilt; API and dashboard containers restarted; PostgreSQL volume retained.",
@@ -65,57 +81,200 @@
       "Gateway heartbeat path returned HTTP 401 without authentication, confirming route exists and token is required.",
       "Both notebook files parse as JSON and include continuous loops/heartbeat route."
     ],
-    "remaining_manual_action": "Add the current Quick Tunnel URL to API_BASE_URL in both Colab Secrets and run both updated notebooks from the repository; verify both sessions show online in the local dashboard.",
-    "not_yet_verified": "No Colab sessions have connected to the new heartbeat endpoint; real research/voice/render end-to-end is still pending."
+    "remaining_manual_action": "Actualizar API_BASE_URL a la URL HTTPS vigente del Quick Tunnel en ambos notebooks; configurar Secrets requeridos y arrancar manualmente ambos runtimes. Confirmar workers online y procesar una tarea real.",
+    "not_yet_verified": "Ninguna sesión Colab conectada; investigación, llamada worker→Spaces, clonación, render MP4, aprobación registrada y publicación automática no han pasado E2E."
   },
   "architecture": {
     "control_plane": [
-      {"path": "apps/dashboard", "technology": "Next.js", "responsibility": "Crear trabajos, importar medios, mostrar progreso, errores y enlaces de salida.", "state": "activo"},
-      {"path": "apps/api", "technology": "FastAPI", "responsibility": "API de orquestación, cola/leases en PostgreSQL, progreso, assets y enlaces firmados S3.", "state": "activo"},
-      {"path": "PostgreSQL", "technology": "PostgreSQL 16", "responsibility": "Persistir trabajos, estados, relaciones padre/hijo y metadatos de medios.", "state": "activo"},
-      {"path": "Cloudflare R2", "technology": "API compatible S3", "responsibility": "Guardar medios, audio y MP4 como objetos privados; acceso por URLs firmadas.", "state": "configuración necesaria para workers"}
+      {
+        "path": "apps/dashboard",
+        "technology": "Next.js",
+        "responsibility": "Crear trabajos, importar medios, mostrar progreso/errores/resultados y estado de workers; aprobación persistente y publicación automática aún no implementadas.",
+        "state": "activo"
+      },
+      {
+        "path": "apps/api",
+        "technology": "FastAPI",
+        "responsibility": "API de orquestación, cola/leases en PostgreSQL, progreso, assets y enlaces firmados S3.",
+        "state": "activo"
+      },
+      {
+        "path": "PostgreSQL",
+        "technology": "PostgreSQL 16",
+        "responsibility": "Persistir trabajos, estados, relaciones padre/hijo y metadatos de medios.",
+        "state": "activo"
+      },
+      {
+        "path": "Cloudflare R2",
+        "technology": "API compatible S3",
+        "responsibility": "Guardar medios, audio y MP4 como objetos privados; acceso por URLs firmadas.",
+        "state": "configuración necesaria para workers"
+      }
     ],
     "remote_compute": [
-      {"path": "notebooks/01_research_scrapegraph.ipynb", "runtime": "Google Colab", "responsibility": "Reservar research, buscar fuentes públicas, producir brief/guion, llamar a Spaces, guardar WAV y encolar render.", "state": "implementado; E2E pendiente"},
-      {"path": "apps/script-generator-space", "runtime": "Hugging Face Space privado, Gradio", "model_cpu": "Qwen/Qwen3-1.7B", "model_gpu_opt_in": "Qwen/Qwen3-4B", "responsibility": "Generar salida editorial estructurada y guion desde prompt/fuentes.", "state": "CPU probado; ZeroGPU opt-in"},
-      {"path": "apps/voice-studio-space", "runtime": "Hugging Face Space privado, Gradio", "model": "k2-fsa/OmniVoice", "responsibility": "Síntesis TTS en español y clonación zero-shot con muestra/transcripción opcional.", "state": "TTS CPU probado; clonación E2E pendiente"},
-      {"path": "notebooks/02_render_remotion.ipynb", "runtime": "Google Colab", "responsibility": "Descargar assets, crear composición Remotion, renderizar/verificar MP4 y subir resultado a R2.", "state": "implementado; render E2E pendiente"}
+      {
+        "path": "notebooks/01_research_scrapegraph.ipynb",
+        "runtime": "Google Colab",
+        "responsibility": "Reservar research, buscar fuentes públicas, producir brief/guion, llamar a Spaces, guardar WAV y encolar render.",
+        "state": "polling/heartbeat implementados; conexión y trabajo E2E pendientes"
+      },
+      {
+        "path": "apps/script-generator-space",
+        "runtime": "Hugging Face Space privado, Gradio",
+        "model_cpu": "Qwen/Qwen3-1.7B",
+        "model_gpu_opt_in": "Qwen/Qwen3-4B",
+        "responsibility": "Generar salida editorial estructurada y guion desde prompt/fuentes.",
+        "state": "CPU probado; ZeroGPU opt-in"
+      },
+      {
+        "path": "apps/voice-studio-space",
+        "runtime": "Hugging Face Space privado, Gradio",
+        "model": "k2-fsa/OmniVoice",
+        "responsibility": "Síntesis TTS en español y clonación zero-shot con muestra/transcripción opcional.",
+        "state": "TTS CPU aislado probado; clonación autorizada por probar desde flujo"
+      },
+      {
+        "path": "notebooks/02_render_remotion.ipynb",
+        "runtime": "Google Colab",
+        "responsibility": "Descargar assets, crear composición Remotion, renderizar/verificar MP4 y subir resultado a R2.",
+        "state": "notebook implementado; MP4 E2E y revisión de calidad pendientes"
+      }
     ],
     "optional_services": [
-      {"path": "infra/docker-compose.yml:redis", "profile": "future-queue", "state": "optativo; PostgreSQL es la cola actual"},
-      {"path": "apps/publisher-service", "profile": "publisher", "state": "optativo, separado y no enlazado al dashboard"},
-      {"path": "Mixpost", "profile": "scheduler", "state": "programación manual opcional; despliegue local de evaluación"},
-      {"path": "Cloudflare Quick Tunnel + worker-gateway", "profile": "colab-tunnel", "state": "túnel HTTPS temporal para endpoints worker allowlisted"}
+      {
+        "path": "infra/docker-compose.yml:redis",
+        "profile": "future-queue",
+        "state": "optativo; PostgreSQL es la cola actual"
+      },
+      {
+        "path": "apps/publisher-service",
+        "profile": "publisher",
+        "state": "optativo, separado y no enlazado al dashboard"
+      },
+      {
+        "path": "Mixpost",
+        "profile": "scheduler",
+        "state": "programación manual opcional; despliegue local de evaluación"
+      },
+      {
+        "path": "Cloudflare Quick Tunnel + worker-gateway",
+        "profile": "colab-tunnel",
+        "state": "túnel HTTPS temporal para endpoints worker allowlisted"
+      }
     ],
     "prototypes_or_unconnected": [
-      {"path": "apps/hyperframes-space", "state": "stub; backend no implementado"},
-      {"path": "apps/open-gen-ai-space", "state": "referencia/prototipo; fuera del pipeline"},
-      {"path": "packages/node/video-templates", "state": "plantillas reservadas; notebook actual crea composición inline"},
-      {"path": "apps/publisher-service", "state": "Postiz no participa en la publicación manual actual de Mixpost"}
+      {
+        "path": "apps/hyperframes-space",
+        "state": "stub; backend no implementado"
+      },
+      {
+        "path": "apps/open-gen-ai-space",
+        "state": "referencia/prototipo; fuera del pipeline"
+      },
+      {
+        "path": "packages/node/video-templates",
+        "state": "plantillas reservadas; notebook actual crea composición inline"
+      },
+      {
+        "path": "apps/publisher-service",
+        "state": "Postiz no participa en la publicación manual actual de Mixpost"
+      }
     ]
   },
   "workflow": [
-    {"step": 1, "actor": "Dashboard", "action": "El usuario envía tema, duración, plataformas y opciones de voz/visual; medios locales opcionales se importan a R2."},
-    {"step": 2, "actor": "API/PostgreSQL", "action": "Valida y persiste el trabajo research; el worker lo reserva con WORKER_API_TOKEN y lease."},
-    {"step": 3, "actor": "Notebook research", "action": "Busca en páginas públicas indexadas usando ScrapeGraphAI/DuckDuckGo; puede usar YouTube Data API si YOUTUBE_API_KEY está configurada. La búsqueda web no garantiza tendencias actuales ni cobertura completa."},
-    {"step": 4, "actor": "Script Space", "action": "Envía fuentes y prompt editorial a Qwen; el Space genera notas/guion. CPU por defecto; GPU solo si USE_ZEROGPU=1."},
-    {"step": 5, "actor": "Voice Space", "action": "OmniVoice genera narración en CPU por defecto; opcionalmente recibe muestra de voz autorizada y transcripción exacta para clonación zero-shot."},
-    {"step": 6, "actor": "R2 y API", "action": "Notebook guarda WAV privado y completa research; la API crea render relacionado mediante parent_job_id."},
-    {"step": 7, "actor": "Notebook render", "action": "Descarga WAV/visuales, renderiza composición vertical con Remotion/Chromium/FFmpeg, valida MP4 y lo sube a R2."},
-    {"step": 8, "actor": "Dashboard", "action": "Consulta estados y descarga el video por URL firmada temporal; la publicación social es manual en Mixpost."}
+    {
+      "step": 1,
+      "actor": "Dashboard",
+      "action": "El usuario envía tema, duración, plataformas y opciones de voz/visual; medios locales opcionales se importan a R2."
+    },
+    {
+      "step": 2,
+      "actor": "API/PostgreSQL",
+      "action": "Valida y persiste el trabajo research; el worker lo reserva con WORKER_API_TOKEN y lease."
+    },
+    {
+      "step": 3,
+      "actor": "Notebook research",
+      "action": "Busca en páginas públicas indexadas usando ScrapeGraphAI/DuckDuckGo; puede usar YouTube Data API si YOUTUBE_API_KEY está configurada. La búsqueda web no garantiza tendencias actuales ni cobertura completa."
+    },
+    {
+      "step": 4,
+      "actor": "Script Space",
+      "action": "Envía fuentes y prompt editorial a Qwen; el Space genera notas/guion. CPU por defecto; GPU solo si USE_ZEROGPU=1."
+    },
+    {
+      "step": 5,
+      "actor": "Voice Space",
+      "action": "OmniVoice genera narración en CPU por defecto; opcionalmente recibe muestra de voz autorizada y transcripción exacta para clonación zero-shot."
+    },
+    {
+      "step": 6,
+      "actor": "R2 y API",
+      "action": "Notebook guarda WAV privado y completa research; la API crea render relacionado mediante parent_job_id."
+    },
+    {
+      "step": 7,
+      "actor": "Notebook render",
+      "action": "Descarga WAV/visuales, renderiza composición vertical con Remotion/Chromium/FFmpeg, valida MP4 y lo sube a R2."
+    },
+    {
+      "step": 8,
+      "actor": "Dashboard",
+      "action": "Dashboard muestra estado/descarga por URL firmada temporal. Aprobación no queda persistida; Mixpost sirve para carga/programación manual. No hay publicación automática al aprobar."
+    }
   ],
   "external_repositories_and_models": [
-    {"name": "VoiceStudio", "url": "https://github.com/javiertarazon/VoiceStudio.git", "use": "Origen del módulo omnivoice empaquetado para el Voice Space.", "observed_revision": "286f46b", "license_note": "AGPL-3.0 según documentación del proyecto."},
-    {"name": "Scrapegraph-ai", "url": "https://github.com/javiertarazon/Scrapegraph-ai.git", "use": "Búsqueda/extracción web del notebook; instala fork fijado.", "pinned_revision": "c75c8084fae2d4f5ba01a8c218bc1168b67e3569"},
-    {"name": "Qwen/Qwen3-1.7B", "use": "Modelo CPU por defecto para guion.", "license_note": "Apache-2.0 reportada en documentación del proyecto."},
-    {"name": "Qwen/Qwen3-4B", "use": "Alternativa GPU ZeroGPU opt-in para guion.", "license_note": "Apache-2.0 reportada en documentación del proyecto."},
-    {"name": "k2-fsa/OmniVoice", "use": "Modelo de TTS/clonación del Voice Space."},
-    {"name": "Remotion", "use": "Framework de composición/render instalado en Colab; versión directa documentada 4.0.448."},
-    {"name": "marketingskills", "use": "Prompts/documentación; no es dependencia runtime activa."},
-    {"name": "HyperFrames", "use": "No integrado; Space asociado es stub."},
-    {"name": "OpenMontage", "use": "Clon de referencia; no es dependencia activa."},
-    {"name": "Open-Generative-AI", "use": "Aplicación de referencia; no es dependencia del pipeline."},
-    {"name": "MoneyPrinterTurbo", "use": "Excluido del clonador por instrucción previa del usuario."}
+    {
+      "name": "VoiceStudio",
+      "url": "https://github.com/javiertarazon/VoiceStudio.git",
+      "use": "Origen del módulo omnivoice empaquetado para el Voice Space.",
+      "observed_revision": "286f46b",
+      "license_note": "AGPL-3.0 según documentación del proyecto."
+    },
+    {
+      "name": "Scrapegraph-ai",
+      "url": "https://github.com/javiertarazon/Scrapegraph-ai.git",
+      "use": "Búsqueda/extracción web del notebook; instala fork fijado.",
+      "pinned_revision": "c75c8084fae2d4f5ba01a8c218bc1168b67e3569"
+    },
+    {
+      "name": "Qwen/Qwen3-1.7B",
+      "use": "Modelo CPU por defecto para guion.",
+      "license_note": "Apache-2.0 reportada en documentación del proyecto."
+    },
+    {
+      "name": "Qwen/Qwen3-4B",
+      "use": "Alternativa GPU ZeroGPU opt-in para guion.",
+      "license_note": "Apache-2.0 reportada en documentación del proyecto."
+    },
+    {
+      "name": "k2-fsa/OmniVoice",
+      "use": "Modelo de TTS/clonación del Voice Space."
+    },
+    {
+      "name": "Remotion",
+      "use": "Framework de composición/render instalado en Colab; versión directa documentada 4.0.448."
+    },
+    {
+      "name": "marketingskills",
+      "use": "Prompts/documentación; no es dependencia runtime activa."
+    },
+    {
+      "name": "HyperFrames",
+      "use": "No integrado; Space asociado es stub."
+    },
+    {
+      "name": "OpenMontage",
+      "use": "Clon de referencia; no es dependencia activa."
+    },
+    {
+      "name": "Open-Generative-AI",
+      "use": "Aplicación de referencia; no es dependencia del pipeline."
+    },
+    {
+      "name": "MoneyPrinterTurbo",
+      "use": "Excluido del clonador por instrucción previa del usuario."
+    }
   ],
   "remote_spaces": [
     {
@@ -125,7 +284,9 @@
       "hardware": "zero-a10g",
       "deployed_revision": "c73badf2d1b23e4756ea4ed3b8643f591e1d28c4",
       "runtime_at_verification": "RUNNING",
-      "environment": {"USE_ZEROGPU": "0"},
+      "environment": {
+        "USE_ZEROGPU": "0"
+      },
       "cpu_smoke_evidence": "Qwen3-1.7B generó salida estructurada real en aproximadamente 19 s; sin consumo adicional de saldo ZeroGPU en la prueba CPU.",
       "gpu_mode": "USE_ZEROGPU=1 opt-in; cambia a Qwen3-4B y utiliza cuota compartida."
     },
@@ -136,7 +297,9 @@
       "hardware": "zero-a10g",
       "deployed_revision": "d8f6bee561973588167660ffae6009c5b4b48ea8",
       "runtime_at_verification": "RUNNING",
-      "environment": {"USE_ZEROGPU": "0"},
+      "environment": {
+        "USE_ZEROGPU": "0"
+      },
       "cpu_smoke_evidence": "OmniVoice generó WAV mono válido de 24 kHz, duración aproximada 3.48 s, en aproximadamente 39 s; sin consumo adicional de saldo ZeroGPU en la prueba CPU.",
       "voice_clone_evidence": "No ejecutada con voz propia/autorizada.",
       "gpu_mode": "USE_ZEROGPU=1 opt-in; utiliza cuota compartida."
@@ -144,84 +307,325 @@
   ],
   "configuration_and_credentials": {
     "policy": "Este archivo registra únicamente nombres, finalidad, ubicación esperada y estado de configuración; nunca valores secretos.",
-    "local_templates": [".env.example", ".env.colab.example", "infra/.env.production.example"],
+    "local_templates": [
+      ".env.example",
+      ".env.colab.example",
+      "infra/.env.production.example"
+    ],
     "variables": [
-      {"name": "DATABASE_URL", "purpose": "Conexión API a PostgreSQL.", "location": "secreto local .env; no se transfiere a Colab", "status": "configuración local descrita en auditoría"},
-      {"name": "POSTGRES_PASSWORD", "purpose": "Contraseña de PostgreSQL Compose.", "location": ".env local ignorado por Git", "status": "no documentar valor"},
-      {"name": "WORKER_API_TOKEN", "purpose": "Autenticar operaciones worker y asociar lease.", "location": "API .env y Secrets de ambos notebooks Colab", "status": "valor real no registrado aquí"},
-      {"name": "HF_TOKEN", "purpose": "Token Hugging Face de solo lectura para Spaces privados.", "location": "Secret de Colab; opcionalmente .env local para clientes", "status": "plantilla vacía en .env.example; falta crear/configurar Secret de Colab. OAuth CLI se almacena en caché de credenciales de WSL y no sustituye el Secret de Colab"},
-      {"name": "SCRIPT_SPACE_URL", "purpose": "Endpoint del Space privado Qwen.", "location": "configuración del worker/Secrets Colab", "status": "URL documentada"},
-      {"name": "VOICE_STUDIO_URL", "purpose": "Endpoint del Space privado OmniVoice.", "location": "configuración del worker/Secrets Colab", "status": "URL documentada"},
-      {"name": "S3_ENDPOINT_URL", "purpose": "Endpoint Cloudflare R2 compatible con S3.", "location": "API .env y Secrets Colab", "status": "valor nunca registrar"},
-      {"name": "S3_BUCKET", "purpose": "Bucket privado para assets, WAV y MP4.", "location": "API .env y Secrets Colab", "status": "valor nunca registrar"},
-      {"name": "S3_ACCESS_KEY_ID", "purpose": "Identificador de acceso S3/R2.", "location": "API .env y Secrets Colab", "status": "secreto; mínimo privilegio a un bucket"},
-      {"name": "S3_SECRET_ACCESS_KEY", "purpose": "Secreto de acceso S3/R2.", "location": "API .env y Secrets Colab", "status": "secreto; mínimo privilegio a un bucket"},
-      {"name": "API_BASE_URL", "purpose": "URL HTTPS del Quick Tunnel para workers Colab.", "location": "Secret/configuración Colab", "status": "temporal; cambia cuando se recrea el túnel"},
-      {"name": "YOUTUBE_API_KEY", "purpose": "Opcional para métricas/vistas por hora de YouTube.", "location": "Secret de Colab research", "status": "opcional; sin ella la búsqueda web no ofrece métrica confiable"},
-      {"name": "YOUTUBE_REGION_CODE", "purpose": "Región ISO para búsquedas YouTube.", "location": "configuración opcional Colab", "status": "por defecto VE"},
-      {"name": "NEXT_PUBLIC_API_BASE_URL", "purpose": "URL del API incrustada al compilar dashboard Next.js.", "location": "build arg de Docker Compose", "status": "localhost por defecto; establecer para cada entorno"},
-      {"name": "USE_ZEROGPU", "purpose": "Opt-in de inferencia acelerada con ZeroGPU.", "location": "variables de entorno de ambos HF Spaces", "status": "0 en ambos Spaces verificados; GPU consume cuota"},
-      {"name": "CORS_ORIGINS", "purpose": "Orígenes del dashboard permitidos por API.", "location": "API .env", "status": "configurar según dominio"},
-      {"name": "MIXPOST_APP_KEY / MIXPOST_DB_PASSWORD / MIXPOST_DB_ROOT_PASSWORD", "purpose": "Credenciales del servicio Mixpost opcional.", "location": "API local .env ignorado por Git", "status": "no se registran valores"},
-      {"name": "POSTIZ_API_KEY / STORAGE_PUBLIC_BASE_URL", "purpose": "Integración heredada Publisher/Postiz.", "location": "publisher .env si se habilita", "status": "fuera del flujo actual; confirmar necesidad antes de activar"}
+      {
+        "name": "DATABASE_URL",
+        "purpose": "Conexión API a PostgreSQL.",
+        "location": "secreto local .env; no se transfiere a Colab",
+        "status": "configuración local descrita en auditoría"
+      },
+      {
+        "name": "POSTGRES_PASSWORD",
+        "purpose": "Contraseña de PostgreSQL Compose.",
+        "location": ".env local ignorado por Git",
+        "status": "no documentar valor"
+      },
+      {
+        "name": "WORKER_API_TOKEN",
+        "purpose": "Autenticar operaciones worker y asociar lease.",
+        "location": "API .env y Secrets de ambos notebooks Colab",
+        "status": "valor real no registrado aquí"
+      },
+      {
+        "name": "HF_TOKEN",
+        "purpose": "Token Hugging Face de solo lectura para Spaces privados.",
+        "location": "Secret de Colab; opcionalmente .env local para clientes",
+        "status": "plantilla vacía en .env.example; falta crear/configurar Secret de Colab. OAuth CLI se almacena en caché de credenciales de WSL y no sustituye el Secret de Colab"
+      },
+      {
+        "name": "SCRIPT_SPACE_URL",
+        "purpose": "Endpoint del Space privado Qwen.",
+        "location": "configuración del worker/Secrets Colab",
+        "status": "URL documentada"
+      },
+      {
+        "name": "VOICE_STUDIO_URL",
+        "purpose": "Endpoint del Space privado OmniVoice.",
+        "location": "configuración del worker/Secrets Colab",
+        "status": "URL documentada"
+      },
+      {
+        "name": "S3_ENDPOINT_URL",
+        "purpose": "Endpoint Cloudflare R2 compatible con S3.",
+        "location": "API .env y Secrets Colab",
+        "status": "valor nunca registrar"
+      },
+      {
+        "name": "S3_BUCKET",
+        "purpose": "Bucket privado para assets, WAV y MP4.",
+        "location": "API .env y Secrets Colab",
+        "status": "valor nunca registrar"
+      },
+      {
+        "name": "S3_ACCESS_KEY_ID",
+        "purpose": "Identificador de acceso S3/R2.",
+        "location": "API .env y Secrets Colab",
+        "status": "secreto; mínimo privilegio a un bucket"
+      },
+      {
+        "name": "S3_SECRET_ACCESS_KEY",
+        "purpose": "Secreto de acceso S3/R2.",
+        "location": "API .env y Secrets Colab",
+        "status": "secreto; mínimo privilegio a un bucket"
+      },
+      {
+        "name": "API_BASE_URL",
+        "purpose": "URL HTTPS del Quick Tunnel para workers Colab.",
+        "location": "Secret/configuración Colab",
+        "status": "temporal; cambia cuando se recrea el túnel"
+      },
+      {
+        "name": "YOUTUBE_API_KEY",
+        "purpose": "Opcional para métricas/vistas por hora de YouTube.",
+        "location": "Secret de Colab research",
+        "status": "opcional; sin ella la búsqueda web no ofrece métrica confiable"
+      },
+      {
+        "name": "YOUTUBE_REGION_CODE",
+        "purpose": "Región ISO para búsquedas YouTube.",
+        "location": "configuración opcional Colab",
+        "status": "por defecto VE"
+      },
+      {
+        "name": "NEXT_PUBLIC_API_BASE_URL",
+        "purpose": "URL del API incrustada al compilar dashboard Next.js.",
+        "location": "build arg de Docker Compose",
+        "status": "localhost por defecto; establecer para cada entorno"
+      },
+      {
+        "name": "USE_ZEROGPU",
+        "purpose": "Opt-in de inferencia acelerada con ZeroGPU.",
+        "location": "variables de entorno de ambos HF Spaces",
+        "status": "0 en ambos Spaces verificados; GPU consume cuota"
+      },
+      {
+        "name": "CORS_ORIGINS",
+        "purpose": "Orígenes del dashboard permitidos por API.",
+        "location": "API .env",
+        "status": "configurar según dominio"
+      },
+      {
+        "name": "MIXPOST_APP_KEY / MIXPOST_DB_PASSWORD / MIXPOST_DB_ROOT_PASSWORD",
+        "purpose": "Credenciales del servicio Mixpost opcional.",
+        "location": "API local .env ignorado por Git",
+        "status": "no se registran valores"
+      },
+      {
+        "name": "POSTIZ_API_KEY / STORAGE_PUBLIC_BASE_URL",
+        "purpose": "Integración heredada Publisher/Postiz.",
+        "location": "publisher .env si se habilita",
+        "status": "fuera del flujo actual; confirmar necesidad antes de activar"
+      }
     ],
     "secret_exposure_check": "No se añadieron archivos .env reales, tokens OAuth, tokens HF, contraseñas, claves R2, credenciales Colab ni valores de secretos al manifiesto."
   },
   "change_trace": [
     {
       "area": "API, persistencia y pipeline",
-      "files": ["apps/api/main.py", "packages/python/core/schemas.py", "tests/test_api_progress.py", "tests/test_schemas.py"],
-      "changes": ["Relación parent_job_id entre research y render; creación/seguimiento del render idempotente.", "Correcciones de conversión de estados/SQL en finalización y fallo de trabajo para evitar respuestas 500.", "Validación tipada de género, edad y tono de voz.", "Seguimiento y mensajes de progreso por etapa."]
+      "files": [
+        "apps/api/main.py",
+        "packages/python/core/schemas.py",
+        "tests/test_api_progress.py",
+        "tests/test_schemas.py"
+      ],
+      "changes": [
+        "Relación parent_job_id entre research y render; creación/seguimiento del render idempotente.",
+        "Correcciones de conversión de estados/SQL en finalización y fallo de trabajo para evitar respuestas 500.",
+        "Validación tipada de género, edad y tono de voz.",
+        "Seguimiento y mensajes de progreso por etapa."
+      ]
     },
     {
       "area": "Dashboard y Compose",
-      "files": ["apps/dashboard/Dockerfile", "apps/dashboard/app/page.tsx", "infra/docker-compose.yml", ".env.example"],
-      "changes": ["NEXT_PUBLIC_API_BASE_URL se pasa como argumento de compilación de Next.js.", "Configuración de voz y estado del pipeline reflejados en UI.", "Redis, Publisher y servicios relacionados se activan con perfiles optativos; PostgreSQL continúa siendo la cola activa."]
+      "files": [
+        "apps/dashboard/Dockerfile",
+        "apps/dashboard/app/page.tsx",
+        "infra/docker-compose.yml",
+        ".env.example"
+      ],
+      "changes": [
+        "NEXT_PUBLIC_API_BASE_URL se pasa como argumento de compilación de Next.js.",
+        "Configuración de voz y estado del pipeline reflejados en UI.",
+        "Redis, Publisher y servicios relacionados se activan con perfiles optativos; PostgreSQL continúa siendo la cola activa."
+      ]
     },
     {
       "area": "Hugging Face Spaces CPU-first",
-      "files": ["apps/script-generator-space/app.py", "apps/script-generator-space/README.md", "apps/script-generator-space/requirements.txt", "apps/voice-studio-space/app.py", "apps/voice-studio-space/README.md"],
-      "changes": ["CPU por defecto con límites de hilos, carga diferida y lock de modelo.", "GPU únicamente con USE_ZEROGPU=1.", "Marcador @spaces.GPU de un segundo no invocado para que el runtime ZeroGPU registre soporte.", "Qwen3-1.7B en CPU y Qwen3-4B opcional GPU; OmniVoice dtype compatible con CPU."]
+      "files": [
+        "apps/script-generator-space/app.py",
+        "apps/script-generator-space/README.md",
+        "apps/script-generator-space/requirements.txt",
+        "apps/voice-studio-space/app.py",
+        "apps/voice-studio-space/README.md"
+      ],
+      "changes": [
+        "CPU por defecto con límites de hilos, carga diferida y lock de modelo.",
+        "GPU únicamente con USE_ZEROGPU=1.",
+        "Marcador @spaces.GPU de un segundo no invocado para que el runtime ZeroGPU registre soporte.",
+        "Qwen3-1.7B en CPU y Qwen3-4B opcional GPU; OmniVoice dtype compatible con CPU."
+      ]
     },
     {
       "area": "Workers y render",
-      "files": ["notebooks/01_research_scrapegraph.ipynb", "notebooks/02_render_remotion.ipynb", ".env.colab.example", "tests/test_notebooks.py"],
-      "changes": ["Research: observabilidad de búsqueda, opción de métricas YouTube, clientes Gradio compatibles con token/hf_token y esperas largas para CPU.", "Render: duración de audio detectada, composición vertical 1080x1920, captions aproximados, overlay, parámetros de codificación limitados y validación de salida.", "Workers dejan de hacer polling infinito: una ejecución procesa un trabajo y termina.", "Plantilla lista nombres de variables para Colab Secrets sin secretos reales."]
+      "files": [
+        "notebooks/01_research_scrapegraph.ipynb",
+        "notebooks/02_render_remotion.ipynb",
+        ".env.colab.example",
+        "tests/test_notebooks.py"
+      ],
+      "changes": [
+        "Research: observabilidad de búsqueda, opción de métricas YouTube, clientes Gradio compatibles con token/hf_token y esperas largas para CPU.",
+        "Render: duración de audio detectada, composición vertical, captions aproximados, overlay, codificación limitada y validación de salida.",
+        "Workers en actualización posterior: polling continuo y heartbeats; no confundir código implementado con sesión Colab conectada ni job E2E validado.",
+        "Plantilla reúne nombres de variables Colab sin valores secretos."
+      ]
     },
     {
       "area": "Despliegue y verificaciones",
-      "files": ["scripts/deploy_hf_script_space.sh", "scripts/deploy_hf_spaces.sh", "scripts/smoke_hf_spaces_cpu.py", "scripts/smoke_local_pipeline.py", "pytest.ini"],
-      "changes": ["Despliegue selectivo y empaquetado de aplicaciones Space.", "Smoke tests reproducibles de inferencia CPU y API/PostgreSQL/R2 con limpieza.", "pytest.ini limita la recolección a tests/."]
+      "files": [
+        "scripts/deploy_hf_script_space.sh",
+        "scripts/deploy_hf_spaces.sh",
+        "scripts/smoke_hf_spaces_cpu.py",
+        "scripts/smoke_local_pipeline.py",
+        "pytest.ini"
+      ],
+      "changes": [
+        "Despliegue selectivo y empaquetado de aplicaciones Space.",
+        "Smoke tests reproducibles de inferencia CPU y API/PostgreSQL/R2 con limpieza.",
+        "pytest.ini limita la recolección a tests/."
+      ]
     },
     {
       "area": "Documentación de continuidad",
-      "files": ["README.md", "docs/auditoria-integral-marketing-content-os.md", "docs/plan-funcionalidad-y-computo.md", "docs/estado-y-trazabilidad-marketing-content-os.json"],
-      "changes": ["README actualizado con arquitectura real CPU-first, perfiles Compose, Spaces desplegados, límites, configuración y pruebas.", "Auditoría integral y plan ordenan hallazgos y validaciones pendientes.", "Este manifiesto reúne trazabilidad legible por agentes y referencias para retomar el trabajo."]
+      "files": [
+        "README.md",
+        "docs/auditoria-integral-marketing-content-os.md",
+        "docs/plan-funcionalidad-y-computo.md",
+        "docs/estado-y-trazabilidad-marketing-content-os.json"
+      ],
+      "changes": [
+        "README actualizado con arquitectura real CPU-first, perfiles Compose, Spaces desplegados, límites, configuración y pruebas.",
+        "Auditoría integral y plan ordenan hallazgos y validaciones pendientes.",
+        "Este manifiesto reúne trazabilidad legible por agentes y referencias para retomar el trabajo."
+      ]
+    },
+    {
+      "area": "Presencia y orquestación continua de Colab (commit previo 6ea4496)",
+      "files": [
+        "apps/api/main.py",
+        "packages/python/core/schemas.py",
+        "apps/dashboard/app/page.tsx",
+        "notebooks/01_research_scrapegraph.ipynb",
+        "notebooks/02_render_remotion.ipynb"
+      ],
+      "changes": [
+        "Heartbeat persistente/status local de worker con ventana online de 90 s.",
+        "Notebook research/render mantiene polling mientras su celda/runtime siguen activos y dashboard actualiza estado.",
+        "Colab requiere inicio manual y puede suspender runtime; no existe evidencia de sesión conectada en el corte documental."
+      ]
     }
   ],
   "verification_evidence": {
     "recorded_in_session_docs": [
-      {"check": "pytest", "result": "28 passed, 1 warning; advertencia deprecación Starlette TestClient/httpx.", "source": "docs/auditoria-integral-marketing-content-os.md y docs/plan-funcionalidad-y-computo.md"},
-      {"check": "Docker/local API", "result": "Build Docker, PostgreSQL saludable y endpoints HTTP locales verificados.", "source": "docs/auditoria-integral-marketing-content-os.md"},
-      {"check": "R2", "result": "Prueba real upload, HEAD, URL firmada de descarga y eliminación temporal.", "source": "docs/auditoria-integral-marketing-content-os.md"},
-      {"check": "HF Qwen CPU", "result": "Salida estructurada real en aproximadamente 19 s, USE_ZEROGPU=0.", "source": "README.md y docs/plan-funcionalidad-y-computo.md"},
-      {"check": "HF OmniVoice CPU", "result": "WAV mono 24 kHz válido, aproximadamente 3.48 s de audio y 39 s de inferencia, USE_ZEROGPU=0.", "source": "README.md y docs/plan-funcionalidad-y-computo.md"},
-      {"check": "ZeroGPU cuota", "result": "Saldo reportado 265.637/300 GPU-s antes/después de las pruebas CPU; sin consumo adicional de dichas pruebas.", "source": "docs/plan-funcionalidad-y-computo.md"},
-      {"check": "Static/shell", "result": "py_compile de Spaces y smoke script, bash -n de scripts de despliegue y git diff --check pasaron según registro de sesión.", "source": "registro de trabajo de esta sesión"}
+      {
+        "check": "pytest",
+        "result": "28 passed, 1 warning; advertencia deprecación Starlette TestClient/httpx.",
+        "source": "docs/auditoria-integral-marketing-content-os.md y docs/plan-funcionalidad-y-computo.md"
+      },
+      {
+        "check": "Docker/local API",
+        "result": "Build Docker, PostgreSQL saludable y endpoints HTTP locales verificados.",
+        "source": "docs/auditoria-integral-marketing-content-os.md"
+      },
+      {
+        "check": "R2",
+        "result": "Prueba real upload, HEAD, URL firmada de descarga y eliminación temporal.",
+        "source": "docs/auditoria-integral-marketing-content-os.md"
+      },
+      {
+        "check": "HF Qwen CPU",
+        "result": "Salida estructurada real en aproximadamente 19 s, USE_ZEROGPU=0.",
+        "source": "README.md y docs/plan-funcionalidad-y-computo.md"
+      },
+      {
+        "check": "HF OmniVoice CPU",
+        "result": "WAV mono 24 kHz válido, aproximadamente 3.48 s de audio y 39 s de inferencia, USE_ZEROGPU=0.",
+        "source": "README.md y docs/plan-funcionalidad-y-computo.md"
+      },
+      {
+        "check": "ZeroGPU cuota",
+        "result": "Saldo reportado 265.637/300 GPU-s antes/después de las pruebas CPU; sin consumo adicional de dichas pruebas.",
+        "source": "docs/plan-funcionalidad-y-computo.md"
+      },
+      {
+        "check": "Static/shell",
+        "result": "py_compile de Spaces y smoke script, bash -n de scripts de despliegue y git diff --check pasaron según registro de sesión.",
+        "source": "registro de trabajo de esta sesión"
+      },
+      {
+        "check": "Orquestación y estado de workers",
+        "result": "Implementación local, reconstrucción/HTTP dashboard y API, ruta heartbeat protegida y notebooks con polling continuo documentados; no se verificó conexión real desde Colab ni procesamiento de job.",
+        "source": "README.md, docs/auditoria-integral-marketing-content-os.md y registro del commit 6ea4496"
+      }
     ],
-    "test_warning": "Las pruebas documentadas acreditan componentes aislados y el plano local; no equivalen a aceptación integral de un MP4 producido en Colab."
+    "test_warning": "La evidencia acredita pruebas aisladas y el plano local, no aceptación de un MP4 producido por el pipeline. Los números de pruebas reflejan ejecuciones documentadas anteriores y no se ejecutaron de nuevo al actualizar solo documentación."
   },
   "known_issues_and_next_steps": [
-    {"priority": "P0 funcional", "item": "Configurar en Colab Secrets el token HF de solo lectura con acceso a ambos Spaces; añadir también API_BASE_URL, WORKER_API_TOKEN y credenciales R2 requeridas.", "acceptance": "Notebook research autentica ambos Spaces privados y reserva un trabajo real sin mostrar valores secretos."},
-    {"priority": "P0 funcional", "item": "Ejecutar research de extremo a extremo con búsqueda, Qwen, TTS y WAV privado en R2.", "acceptance": "Research termina y deja guion, fuentes, audio y render hijo asociado en dashboard."},
-    {"priority": "P0 funcional", "item": "Probar clonación OmniVoice con WAV propio/autorizado y transcripción exacta.", "acceptance": "WAV devuelto válido, longitud y voz revisadas por el usuario; registrar solo metadatos de prueba no sensibles."},
-    {"priority": "P0 funcional", "item": "Ejecutar notebook render con un trabajo real y revisar artefacto MP4.", "acceptance": "MP4 reproducible/descargable, vertical 1080x1920, códecs y duración acordes al audio; inspección visual/auditiva documentada."},
-    {"priority": "P1 fiabilidad", "item": "Mejorar estado agregado del pipeline, cancelación cuando falla heartbeat, reintentos/idempotencia y reporte fiable de fallos de workers.", "acceptance": "Fallo y reintento no duplican inferencias/renders; UI muestra estado final único."},
-    {"priority": "P1 rendimiento", "item": "Medir CPU de OmniVoice/Qwen con guiones de producción; revisar duración, timeout, memoria y límites gratuitos de Spaces/Colab.", "acceptance": "Presupuesto de tiempo/memoria probado con límites claros y comportamiento de timeout recuperable."},
-    {"priority": "P2 calidad", "item": "Subtítulos actualmente aproximados, no sincronizados palabra por palabra; worker render instala sistema/NPM sin lockfile reproducible.", "acceptance": "Añadir alineación temporal y fijar versiones/checksums de entorno."},
-    {"priority": "P2 búsqueda", "item": "DuckDuckGo/ScrapeGraphAI no es escucha social en tiempo real; puede devolver índices incompletos o fragmentos antiguos. YouTube API es opcional.", "acceptance": "Etiquetar antigüedad/fuente, medir calidad y no afirmar viralidad sin datos de métricas."},
-    {"priority": "P2 seguridad posterior a funcionalidad", "item": "API de usuario carece de autenticación/propiedad; Compose entrega env_file amplio; límites de subida/SSRF y acceso de Publisher requieren endurecimiento.", "acceptance": "Autenticación/autorización y mínimo privilegio implementados antes de exposición pública; ver auditoría integral."},
-    {"priority": "P3 mantenimiento", "item": "HyperFrames/OpenMontage/Open-Generative-AI/plantillas Node no están integrados; distinguir prototipo de dependencia activa.", "acceptance": "Eliminar, documentar o integrar deliberadamente después de validar licencias y coste operativo."}
+    {
+      "priority": "P0 funcional",
+      "item": "Conectar los dos workers Colab con URL HTTPS actual del túnel y Secrets requeridos, incluidos HF read-only y R2.",
+      "acceptance": "Ambos aparecen online; research y render reservan/completan un job real desde dashboard."
+    },
+    {
+      "priority": "P0 funcional",
+      "item": "Ejecutar recorrido real de investigación → Qwen → TTS genérico → WAV privado en R2.",
+      "acceptance": "Job visible con fuentes, guion, audio reproducible y render hijo asociado; errores y duraciones registrados."
+    },
+    {
+      "priority": "P0 funcional",
+      "item": "Probar clonación OmniVoice con WAV propio/autorizado y transcripción literal.",
+      "acceptance": "Voz generada se escucha y compara con la muestra; el usuario acepta calidad; sin publicar audio de referencia."
+    },
+    {
+      "priority": "P0 funcional",
+      "item": "Generar MP4 en Colab y realizar revisión visual/auditiva.",
+      "acceptance": "Artefacto reproducible y descargable; codec/resolución/duración/audio validados y defectos de captions/sincronía revisados."
+    },
+    {
+      "priority": "P0 flujo de aprobación/publicación",
+      "item": "Implementar estados de revisión persistentes y elegir integración social (Mixpost o Postiz); hoy publicación manual, sin trigger por aprobación.",
+      "acceptance": "Aprobación/rechazo ligada al hash/versión de video; publicación de prueba post-aprobación con OAuth, transferencia de MP4 privado, estado remoto e idempotencia."
+    },
+    {
+      "priority": "P1 fiabilidad",
+      "item": "Mejorar estado agregado de pipeline, cancelación ante heartbeat fallido, backoff/idempotencia y reportería de errores.",
+      "acceptance": "Fallos/reintentos no duplican inferencias/renders; UI da estado final único y recuperable."
+    },
+    {
+      "priority": "P1 rendimiento/calidad",
+      "item": "Medir CPU y memoria reales en Colab/HF con guion de duración normal; revisar caption alignment y fijar dependencias de render.",
+      "acceptance": "Presupuesto de tiempo/memoria y perfil de calidad reproducible; MP4 sincronizado e inspeccionado."
+    },
+    {
+      "priority": "P2 búsqueda",
+      "item": "DuckDuckGo/ScrapeGraphAI no es escucha social en tiempo real; YouTube API opcional.",
+      "acceptance": "Exponer edad/tipo/fuente de señal; no afirmar viralidad sin métricas."
+    },
+    {
+      "priority": "P2 seguridad posterior a funcionalidad",
+      "item": "API usuario sin autenticación/propiedad; Compose hereda env amplio; revisar límites/SSRF, secretos, CORS y auth publisher antes de exposición.",
+      "acceptance": "Autenticación/autorización y mínimo privilegio antes de exponer servicios públicamente; ver auditoría."
+    },
+    {
+      "priority": "P3 mantenimiento",
+      "item": "HyperFrames/OpenMontage/Open-Generative-AI/plantillas Node no están integrados; distinguir prototipo de dependencia activa.",
+      "acceptance": "Eliminar, documentar o integrar deliberadamente después de validar licencias y coste."
+    }
   ],
   "useful_commands": {
     "local_start": "docker compose --env-file .env -f infra/docker-compose.yml up -d --build",
@@ -234,10 +638,12 @@
     "stop_local": "docker compose --profile scheduler --env-file .env -f infra/docker-compose.yml down"
   },
   "limitations": [
-    "GPU local no disponible; la inferencia del Space es CPU-first y lenta. ZeroGPU es opt-in, con cuota/cola, no una fuente ilimitada.",
-    "Los runtimes gratuitos de Colab pueden suspenderse; workers son efímeros y manuales, no servicio 24/7.",
-    "No se garantiza que el sistema produzca videos de calidad alta automáticamente sin revisar fuentes, guion, voz, sincronización visual y render final.",
-    "Los resultados de scraping dependen de índices y páginas públicas accesibles; no incluyen bypass de login, CAPTCHA ni controles de plataforma.",
-    "El estado descrito es una fotografía de la evidencia disponible al 2026-10-18; revisar el runtime remoto y Git antes de asumir vigencia."
+    "GPU local no disponible; Spaces usan CPU por defecto y ZeroGPU es opt-in con cuota/cola, no una fuente ilimitada.",
+    "Colab gratuito exige iniciar manualmente runtime/notebook y puede suspender workers; el dashboard no puede mantener sesiones 24/7.",
+    "No hay MP4 final E2E inspeccionado; la calidad alta no puede afirmarse hasta evaluar imagen, audio, captions, ritmo y sincronía.",
+    "No hay clonación de voz propia/autorizada validada en la ruta integral.",
+    "No existe aprobación persistente ni publicación automática al aprobar; Mixpost queda como proceso manual y Postiz desconectado.",
+    "Scraping depende de índices y páginas públicas accesibles; no evita login, CAPTCHA ni restricciones de plataforma.",
+    "Este estado refleja evidencia documental al 2026-10-18; revisar runtime y Git antes de asumir que servicios temporales siguen activos."
   ]
 }
