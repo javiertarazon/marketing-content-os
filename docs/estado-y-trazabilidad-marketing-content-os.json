@@ -37,6 +37,37 @@
     "publishing": "Manual mediante Mixpost opcional. Publisher/Postiz no está conectado al flujo del dashboard.",
     "security": "Auditoría realizada y acciones documentadas; el endurecimiento de autenticación/autorización de usuarios y aislamiento de secretos es trabajo posterior al cierre funcional, según la prioridad acordada. No exponer la API públicamente antes de resolverlo."
   },
+  "worker_automation_update": {
+    "status": "implemented_in_code_and_running_locally",
+    "date": "2026-10-18",
+    "api": {
+      "worker_heartbeat": {"method":"POST","path":"/v1/workers/heartbeat","auth":"WORKER_API_TOKEN Bearer","allowed_by_quick_tunnel":true},
+      "local_status": {"method":"GET","path":"/v1/workers","auth":"local dashboard/API only; not exposed by gateway","online_window_seconds":90,"session_history_hours":24},
+      "persistence": "worker_instances table; session ID, worker type, idle/working/stopped state, current job, stage and last_seen"
+    },
+    "notebooks": {
+      "files": ["notebooks/01_research_scrapegraph.ipynb", "notebooks/02_render_remotion.ipynb"],
+      "behavior": "Continuous polling loop; takes queued jobs, reports idle and active heartbeats, retries after errors, sleeps 20 seconds between empty polls.",
+      "startup": "User runs notebook cells once per Colab runtime and leaves the final worker cell running.",
+      "shutdown": "KeyboardInterrupt attempts to report stopped; an abrupt runtime loss appears offline after 90 seconds.",
+      "free_colab_constraint": "The local dashboard cannot start/restart a free Colab runtime. User must reopen and run notebook after Colab disconnects."
+    },
+    "dashboard": "Displays research/voice and render workers as connected or disconnected, with active stage/job; polls every 10 seconds.",
+    "quick_tunnel": {
+      "current_session_status": "Active at implementation time; retrieve from cloudflared logs; changes when restarted.",
+      "only_new_public_route": "POST /v1/workers/heartbeat",
+      "verification": "Public heartbeat path returned HTTP 401 without a worker token; local GET /v1/workers returned HTTP 200 with no sessions before notebooks connected."
+    },
+    "local_verification": [
+      "Docker API and dashboard images rebuilt; API and dashboard containers restarted; PostgreSQL volume retained.",
+      "Next.js production build and TypeScript check passed; dashboard returned HTTP 200.",
+      "API GET /v1/workers returned HTTP 200 and created/used the worker status table.",
+      "Gateway heartbeat path returned HTTP 401 without authentication, confirming route exists and token is required.",
+      "Both notebook files parse as JSON and include continuous loops/heartbeat route."
+    ],
+    "remaining_manual_action": "Add the current Quick Tunnel URL to API_BASE_URL in both Colab Secrets and run both updated notebooks from the repository; verify both sessions show online in the local dashboard.",
+    "not_yet_verified": "No Colab sessions have connected to the new heartbeat endpoint; real research/voice/render end-to-end is still pending."
+  },
   "architecture": {
     "control_plane": [
       {"path": "apps/dashboard", "technology": "Next.js", "responsibility": "Crear trabajos, importar medios, mostrar progreso, errores y enlaces de salida.", "state": "activo"},

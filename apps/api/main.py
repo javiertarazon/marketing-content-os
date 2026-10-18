@@ -33,6 +33,8 @@ from core.schemas import (
     JobRecord,
     JobStatus,
     MediaAsset,
+    WorkerHeartbeat,
+    WorkerInstanceStatus,
     WorkerType,
 )
 
@@ -181,6 +183,21 @@ def init_database() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS jobs_parent_job_idx ON jobs (parent_job_id) WHERE parent_job_id IS NOT NULL"
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS worker_instances (
+                worker_id TEXT PRIMARY KEY,
+                worker TEXT NOT NULL CHECK (worker IN ('research', 'render')),
+                state TEXT NOT NULL CHECK (state IN ('idle', 'working', 'stopped')),
+                current_job_id UUID REFERENCES jobs(job_id) ON DELETE SET NULL,
+                stage TEXT NOT NULL DEFAULT 'idle',
+                last_seen TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS worker_instances_last_seen_idx ON worker_instances (last_seen DESC)"
+        )
 
 
 @asynccontextmanager
@@ -255,6 +272,54 @@ def healthz() -> dict[str, str]:
             detail="No se puede conectar a PostgreSQL",
         ) from exc
     return {"status": "ok"}
+
+
+@app.post(
+    "/v1/workers/heartbeat",
+    response_model=WorkerInstanceStatus,
+    dependencies=[Depends(require_worker_token)],
+)
+def heartbeat_worker(heartbeat: WorkerHeartbeat) -> WorkerInstanceStatus:
+    state = "stopped" if heartbeat.stopped else ("working" if heartbeat.current_job_id else "idle")
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            INSERT INTO worker_instances
+                (worker_id, worker, state, current_job_id, stage, last_seen)
+            VALUES (%s, %s, %s, %s, %s, now())
+            ON CONFLICT (worker_id) DO UPDATE SET
+                worker = EXCLUDED.worker,
+                state = EXCLUDED.state,
+                current_job_id = EXCLUDED.current_job_id,
+                stage = EXCLUDED.stage,
+                last_seen = now()
+            RETURNING worker_id, worker, state, current_job_id, stage, last_seen,
+                (last_seen >= now() - interval '90 seconds') AS online
+            """,
+            (
+                heartbeat.worker_id,
+                heartbeat.worker.value,
+                state,
+                heartbeat.current_job_id,
+                heartbeat.stage,
+            ),
+        ).fetchone()
+    return WorkerInstanceStatus(**row)
+
+
+@app.get("/v1/workers", response_model=list[WorkerInstanceStatus])
+def list_workers() -> list[WorkerInstanceStatus]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT worker_id, worker, state, current_job_id, stage, last_seen,
+                (last_seen >= now() - interval '90 seconds' AND state <> 'stopped') AS online
+            FROM worker_instances
+            WHERE last_seen >= now() - interval '24 hours'
+            ORDER BY worker, last_seen DESC
+            """
+        ).fetchall()
+    return [WorkerInstanceStatus(**row) for row in rows]
 
 
 @app.post("/v1/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)

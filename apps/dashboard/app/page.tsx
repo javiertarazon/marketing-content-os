@@ -47,6 +47,16 @@ type Asset = {
   size_bytes: number;
 };
 
+type WorkerSession = {
+  worker_id: string;
+  worker: "research" | "render";
+  state: "idle" | "working" | "stopped";
+  current_job_id: string | null;
+  stage: string;
+  last_seen: string;
+  online: boolean;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const mixpostUrl = process.env.NEXT_PUBLIC_MIXPOST_URL ?? "http://localhost:3002";
 const RESEARCH_PLATFORMS = [
@@ -60,6 +70,7 @@ const RESEARCH_PLATFORMS = [
 
 export default function Dashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [workerSessions, setWorkerSessions] = useState<WorkerSession[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [topic, setTopic] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -87,11 +98,17 @@ export default function Dashboard() {
     setAssets((await response.json()) as Asset[]);
   }
 
+  async function refreshWorkers() {
+    const response = await fetch(`${apiBase}/v1/workers`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Estado de workers: HTTP ${response.status}`);
+    setWorkerSessions((await response.json()) as WorkerSession[]);
+  }
+
   useEffect(() => {
     folderInput.current?.setAttribute("webkitdirectory", "");
     folderInput.current?.setAttribute("directory", "");
     const refresh = () => {
-      Promise.all([refreshJobs(), refreshAssets()]).catch((error: Error) => setMessage(error.message));
+      Promise.all([refreshJobs(), refreshAssets(), refreshWorkers()]).catch((error: Error) => setMessage(error.message));
     };
     refresh();
     const interval = window.setInterval(refresh, 10_000);
@@ -196,8 +213,41 @@ export default function Dashboard() {
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 32 }}>
       <h1>Marketing Content OS</h1>
-      <p>Seguimiento de investigación y renderizado; se actualiza cada 10 segundos.</p>
+      <p>Control local del pipeline. Los workers de Colab toman trabajos de la cola mientras sus sesiones estén activas.</p>
       <p><a href={mixpostUrl} target="_blank" rel="noreferrer">Abrir Mixpost Lite para programar contenido</a></p>
+      <section aria-labelledby="workers-heading" style={{ border: "1px solid #ccc", padding: 16, margin: "24px 0" }}>
+        <h2 id="workers-heading">Workers de Colab</h2>
+        <p>Deja ejecutándose la celda worker de cada notebook. Si Colab se desconecta, vuelve a iniciarla; los trabajos pendientes permanecen en la cola local.</p>
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          {(["research", "render"] as const).map((worker) => {
+            const sessions = workerSessions.filter((session) => session.worker === worker);
+            const online = sessions.filter((session) => session.online);
+            const latest = sessions.sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen))[0];
+            const title = worker === "research" ? "Investigación y voz" : "Render de video";
+            return (
+              <article key={worker} style={{ border: "1px solid #ddd", borderRadius: 6, padding: 12 }}>
+                <strong>{title}</strong>
+                <p role="status" style={{ margin: "8px 0" }}>
+                  {online.length > 0 ? `Conectado · ${online.length} sesión(es)` : "Desconectado"}
+                </p>
+                {online.length > 0 ? (
+                  online.map((session) => (
+                    <small key={session.worker_id} style={{ display: "block" }}>
+                      {session.state === "working" ? `Procesando: ${session.stage}` : "Esperando trabajos"}
+                      {session.current_job_id ? ` · ${session.current_job_id.slice(0, 8)}` : ""}
+                    </small>
+                  ))
+                ) : (
+                  <small>
+                    {latest?.state === "stopped" ? "La última sesión se detuvo." : "Abre el notebook correspondiente en Colab y ejecuta su celda worker."}
+                    {latest ? ` Última señal: ${new Date(latest.last_seen).toLocaleTimeString()}.` : " No se ha conectado ninguna sesión."}
+                  </small>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </section>
       <section style={{ border: "1px solid #ccc", padding: 16, margin: "24px 0" }}>
         <h2>Biblioteca local de medios</h2>
         <p>
@@ -317,7 +367,7 @@ export default function Dashboard() {
       </form>
       {message && <p role="status">{message}</p>}
       <h2>Progreso por módulo</h2>
-      <button type="button" onClick={() => refreshJobs().catch((error: Error) => setMessage(error.message))}>
+      <button type="button" onClick={() => Promise.all([refreshJobs(), refreshWorkers()]).catch((error: Error) => setMessage(error.message))}>
         Actualizar
       </button>
       <ul>

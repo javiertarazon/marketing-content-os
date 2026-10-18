@@ -5,25 +5,25 @@
 
 ## 1. Decisión de arquitectura
 
-Mantener el PC como plano de control liviano (dashboard, API y PostgreSQL), guardar medios en R2 privado y ejecutar cómputo en trabajos efímeros iniciados manualmente. No tratar Colab gratuito ni un Space gratuito como servidores permanentes: tienen límites, colas y sesiones que pueden detenerse. Los Spaces ZeroGPU mantienen el hardware actual, pero usan CPU con dos hilos por defecto y no llaman `@spaces.GPU`; esto preserva el saldo diario. La CPU será lenta, especialmente para OmniVoice. `USE_ZEROGPU=1` es el opt-in explícito si se necesita acelerar y se acepta consumir cuota.
+Mantener el PC como plano de control liviano (dashboard, API y PostgreSQL), guardar medios en R2 privado y ejecutar cómputo en Colab gratuito cuando las sesiones estén activas. Los notebooks mantienen polling continuo y el dashboard muestra su presencia; cada runtime debe iniciarse manualmente y puede desconectarse. No tratar Colab ni un Space gratuito como servidores permanentes. Los Spaces ZeroGPU mantienen el hardware actual, pero usan CPU con dos hilos por defecto y no llaman `@spaces.GPU`; esto preserva el saldo diario. La CPU será lenta, especialmente para OmniVoice. `USE_ZEROGPU=1` es el opt-in explícito si se necesita acelerar y se acepta consumir cuota.
 
 ```mermaid
 flowchart LR
     UI[Dashboard local] --> API[API + PostgreSQL]
     API --> R2[(R2 privado: medios y resultados)]
-    API -. tarea manual .-> W1[Colab: investigar + guion + voz]
+    API -. cola mientras el runtime está activo .-> W1[Colab: investigar + guion + voz]
     W1 --> YT[YouTube Data API, opcional]
     W1 --> SCR[Web pública indexada]
     W1 --> Q[HF Space: Qwen]
     W1 --> V[HF Space: OmniVoice / voz clonada]
-    API -. tarea manual .-> W2[Colab: Remotion + FFmpeg]
+    API -. cola mientras el runtime está activo .-> W2[Colab: Remotion + FFmpeg]
     W2 --> R2
     W2 --> OUT[MP4 privado + enlace firmado]
     CF[Cloudflare Workers AI Aura-2-es] -. voz de catálogo sin clonación .-> W1
     GH[GitHub Actions manual, si el repo y cuota lo permiten] -. candidato CPU .-> R2
 ```
 
-El cambio importante ya aplicado es que cada notebook reclama y procesa **un solo trabajo por ejecución**. El usuario vuelve a ejecutar la última celda cuando hay otra tarea. La cola PostgreSQL reencola leases expirados; no se deja un proceso infinito conectado a Colab.
+Los notebooks ahora reclaman trabajos en un ciclo continuo, reportan heartbeat incluso cuando esperan y actualizan estado/etapa. PostgreSQL conserva la cola y reencola leases expirados. El usuario ejecuta cada notebook una vez por sesión y deja la celda final activa; si Colab desconecta el runtime, el estado pasa a desconectado y hay que iniciarlo de nuevo. Esta automatización no puede iniciar sesiones gratuitas de Colab desde el dashboard.
 
 ## 2. Correcciones funcionales implementadas en esta revisión
 
@@ -35,7 +35,7 @@ El cambio importante ya aplicado es que cada notebook reclama y procesa **un sol
 | Duración/calidad de video | Render consulta la duración del WAV generado; la plantilla agrega overlay, zoom lento, captions en bloques cortos, progreso y marca. FFprobe verifica H.264/AAC, 1080×1920 y duración antes de subir. x264 usa CRF 18, `veryfast` y dos hilos. | Evita MP4 incompleto o con códec/tamaño incorrecto. Los captions siguen siendo aproximados, no alineación palabra por palabra. La calidad visual final aún requiere inspección de un render real. |
 | Reserva de trabajos | Ambos notebooks verifican el lease y detectan pérdida en heartbeat antes de seguir con operaciones costosas. | Evita gastar inferencia/render y completar un trabajo cuya reserva ya pertenece a otro worker. |
 | Scraping cuantitativo opcional | YouTube Data API puede buscar videos recientes del tema, recuperar vistas/fecha y calcular vistas por hora; si el secreto opcional no está creado, el notebook sigue con búsqueda web. | Añade una señal comparable para YouTube; no etiqueta una búsqueda limitada como ranking viral global. |
-| Operación de Colab | README describe una ejecución por tarea; Redis y publisher se dejan bajo perfiles opt-in porque el MVP no los consume. | Reduce CPU/RAM, arranques y procesos no utilizados en el PC. |
+| Operación de Colab | Los notebooks consultan la cola continuamente mientras la sesión está activa; la API registra heartbeat/etapa/ID de job y el dashboard muestra investigación/voz y render conectados u offline. | Los trabajos del dashboard se procesan sin volver a ejecutar la celda por cada job. La sesión de Colab debe arrancarse manualmente y puede caducar. Redis y publisher permanecen opt-in. |
 | Cobertura de pruebas | Se añadieron casos para opciones de voz, parent id del pipeline y el `INSERT` de render al completar investigación. | Captura contratos funcionales que antes no estaban protegidos. |
 | Consumo ZeroGPU | Spaces usan CPU por defecto (OmniVoice CPU; Qwen3-1.7B CPU); reserva GPU solo con `USE_ZEROGPU=1`. | Evita agotar el saldo de 5 minutos por defecto; CPU puede tardar varios minutos por solicitud. Notebook espera 15 min por guion y 30 min por voz. |
 
@@ -76,7 +76,7 @@ Comprobaciones realizadas previamente: build Next.js Docker; API/PostgreSQL real
 | Opción | Uso aconsejado | Límites/práctica |
 |---|---|---|
 | HF Spaces ZeroGPU | Inferencia CPU predeterminada de OmniVoice/Qwen; `USE_ZEROGPU=1` para aceleración opcional | Ruta CPU probada y no gastó cuota. La GPU compartida tiene cola y cuota diaria, así que se reserva para solicitudes urgentes o textos largos. Los Spaces permanecen privados y el worker usa token read-only. |
-| Google Colab gratuito | Lanzar manualmente jobs de investigación/render, o inferencia secundaria | Recursos y duración no garantizados; no usarlo como daemon, túnel permanente ni servicio 24/7. Un trabajo por sesión/celda y guardar estado en API/R2 antes de terminar. |
+| Google Colab gratuito | Worker continuo de investigación/render mientras el runtime está activo | Los notebooks hacen polling y reportan presencia; el usuario inicia cada runtime manualmente. Las sesiones pueden desconectarse y no son servicio 24/7. |
 | Kaggle Notebooks GPU | Alternativa manual de emergencia para comparar una inferencia/render | Cuota semanal y disponibilidad varían; hay que adaptar Secrets y acceso de red/R2 y validar que la API acepte las conexiones. No es un worker permanente. |
 | Cloudflare Workers AI | TTS de catálogo en español (Aura-2-es) para voz estándar sin clonar | No ofrece la voz personalizada del usuario; requiere token de Workers AI separado. Se puede elegir como fallback y conservar OmniVoice para clonación/diseño. La tarifa publicada actualmente es por caracteres; revisar antes de activarlo. |
 | GitHub Actions manual | Candidato para Remotion/FFmpeg en CPU y operación reproducible | El render no necesita CUDA. Validar Chromium, memoria, límites de minutos y acceso a R2. Mejor como workflow manual `workflow_dispatch` que como runner continuo; cuota depende de repo/plan. No enviar secretos a logs. |

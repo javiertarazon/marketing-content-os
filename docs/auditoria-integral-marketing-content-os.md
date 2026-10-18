@@ -81,6 +81,8 @@ flowchart LR
 5. El worker de render descarga audio/visual, arma la composición Remotion, renderiza un MP4, lo sube a R2 y completa el trabajo.
 6. El dashboard muestra cada job como fila independiente y obtiene audio/video por redirección a URL firmada de 5 minutos. La publicación final es manual en Mixpost. Publisher/Postiz no interviene.
 
+**Actualización de workers (18-oct-2026):** la API registra heartbeats de sesiones Colab en `worker_instances`; el dashboard muestra investigación/voz y render como conectados, ocupados o desconectados. Los notebooks ahora hacen polling continuo cada 20 segundos y esperan trabajos nuevos. Colab sigue requiriendo iniciar cada notebook manualmente y no garantiza sesiones persistentes; el dashboard no puede arrancar ni reanimar una sesión de Colab gratuita. El túnel allowlisted ahora admite `POST /v1/workers/heartbeat`; `GET /v1/workers` permanece local.
+
 ## Hallazgos priorizados
 
 ### P1 — La API no autentica operaciones ni protege datos de jobs

@@ -11,6 +11,24 @@ class WorkerType(str, Enum):
     render = "render"
 
 
+class WorkerHeartbeat(BaseModel):
+    worker_id: str = Field(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+    worker: WorkerType
+    current_job_id: UUID | None = None
+    stage: str = Field(default="idle", min_length=1, max_length=100)
+    stopped: bool = False
+
+
+class WorkerInstanceStatus(BaseModel):
+    worker_id: str
+    worker: WorkerType
+    state: str
+    current_job_id: UUID | None = None
+    stage: str
+    last_seen: datetime
+    online: bool
+
+
 class JobStatus(str, Enum):
     queued = "queued"
     running = "running"
