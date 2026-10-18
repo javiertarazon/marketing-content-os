@@ -14,11 +14,14 @@ tags:
 ---
 
 Adaptador Gradio privado para el motor OmniVoice incluido en VoiceStudio.
-ZeroGPU reserva una GPU compartida durante cada sintesis; en cuentas gratuitas
-el uso esta sujeto a la cuota diaria y a la cola de Hugging Face.
-Cada llamada reserva como maximo 120 segundos; la cuota efectiva puede variar
-segun el hardware asignado. Si la cuota restante es menor que la reserva
-requerida, Hugging Face rechazara la solicitud antes de generar audio.
+Por defecto la inferencia usa CPU (dos hilos) y no solicita ZeroGPU, para no
+consumir la cuota diaria. La primera llamada carga el modelo de forma diferida;
+las siguientes reutilizan la instancia mientras el Space siga activo. CPU es
+mucho mas lenta, en especial con clonacion, y el Space puede dormir tras horas
+sin actividad.
+
+Para optar por GPU compartida y consumir cuota, define `USE_ZEROGPU=1` en el
+entorno del Space. No se necesita esa variable para el modo gratuito CPU.
 
 La primera carga descarga los pesos publicos `k2-fsa/OmniVoice`. El endpoint
 Gradio `/predict` recibe el texto, genero, edad y tono, y opcionalmente una

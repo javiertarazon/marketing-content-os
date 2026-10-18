@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
 type Job = {
   job_id: string;
+  parent_job_id?: string | null;
   worker: "research" | "render";
   status: string;
   request: { topic: string };
@@ -12,7 +13,16 @@ type Job = {
     research?: {
       source?: string;
       notes?: string;
-      sources?: Array<{ platform: string; source_type?: string; title: string; url: string }>;
+      sources?: Array<{
+        platform: string;
+        source_type?: string;
+        title: string;
+        url: string;
+        channel?: string;
+        view_count?: number;
+        views_per_hour?: number;
+        published_at?: string;
+      }>;
       platform_status?: Array<{
         platform: string;
         status: string;
@@ -57,6 +67,9 @@ export default function Dashboard() {
   const [voiceAssetId, setVoiceAssetId] = useState("");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceCloneAuthorized, setVoiceCloneAuthorized] = useState(false);
+  const [voiceGender, setVoiceGender] = useState("female");
+  const [voiceAge, setVoiceAge] = useState("young adult");
+  const [voicePitch, setVoicePitch] = useState("moderate pitch");
   const [visualAssetId, setVisualAssetId] = useState("");
   const [message, setMessage] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -154,6 +167,9 @@ export default function Dashboard() {
             source_url: sourceUrl.trim() || null,
             style: "financial-news",
             duration_seconds: 35,
+            voice_gender: voiceGender,
+            voice_age: voiceAge,
+            voice_pitch: voicePitch,
             platforms,
             voice_reference_asset_id: voiceAssetId || null,
             voice_reference_transcript: voiceAssetId ? voiceTranscript : null,
@@ -234,6 +250,28 @@ export default function Dashboard() {
             </label>
           ))}
         </fieldset>
+        <fieldset style={{ display: "grid", gap: 8 }}>
+          <legend>Diseño de voz para OmniVoice</legend>
+          <label>Voz
+            <select value={voiceGender} onChange={(event) => setVoiceGender(event.target.value)}>
+              <option value="female">Femenina</option><option value="male">Masculina</option>
+            </select>
+          </label>
+          <label>Edad percibida
+            <select value={voiceAge} onChange={(event) => setVoiceAge(event.target.value)}>
+              {[["child", "Infantil"], ["teenager", "Adolescente"], ["young adult", "Adulta joven"], ["middle-aged", "Mediana edad"], ["elderly", "Mayor"]].map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>Tono
+            <select value={voicePitch} onChange={(event) => setVoicePitch(event.target.value)}>
+              {[["very low pitch", "Muy grave"], ["low pitch", "Grave"], ["moderate pitch", "Medio"], ["high pitch", "Agudo"], ["very high pitch", "Muy agudo"]].map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+        </fieldset>
         <label>
           Voz clonada (muestra WAV)
           <select value={voiceAssetId} onChange={(event) => setVoiceAssetId(event.target.value)}>
@@ -285,7 +323,7 @@ export default function Dashboard() {
       <ul>
         {jobs.map((job) => (
           <li key={job.job_id} style={{ margin: "16px 0" }}>
-            <strong>{job.request.topic}</strong> — módulo {job.worker} — {job.status}
+            <strong>{job.request.topic}</strong> — pipeline {job.parent_job_id ?? job.job_id} — módulo {job.worker} — {job.status}
             <p>{job.progress.message}</p>
             <progress
               aria-label={`Progreso de ${job.worker}`}
@@ -310,6 +348,9 @@ export default function Dashboard() {
                             {source.title || source.url}
                           </a>
                           {source.source_type === "search_snippet" ? " (fragmento indexado, no el post completo)" : ""}
+                          {source.view_count != null && (
+                            <small> · {source.view_count.toLocaleString()} vistas · {source.views_per_hour?.toLocaleString()} vistas/h · {source.channel}</small>
+                          )}
                         </li>
                       ))}
                     </ul>

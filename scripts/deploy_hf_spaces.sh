@@ -27,6 +27,8 @@ trap 'rm -rf -- "$STAGING_DIR"' EXIT
 cp -a "${ROOT}/apps/voice-studio-space/." "$STAGING_DIR/"
 cp -a "${VOICE_STUDIO_SOURCE}/omnivoice" "${STAGING_DIR}/omnivoice"
 cp "${VOICE_STUDIO_SOURCE}/LICENSE" "${STAGING_DIR}/VOICESTUDIO-LICENSE"
+find "$STAGING_DIR" -type d \( -name __pycache__ -o -name .pytest_cache \) -prune -exec rm -rf -- {} +
+find "$STAGING_DIR" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
 echo "Preparando el Space privado ZeroGPU ${SPACE_ID}"
 "$HF_COMMAND" repos create "$SPACE_ID" \

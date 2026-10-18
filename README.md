@@ -4,19 +4,21 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 
 > MVP: API/cola, Spaces privados de voz y guiones, dos notebooks de Colab y programación manual en Mixpost Lite. Requiere configurar cuentas, claves y almacenamiento.
 
-Auditoría completa del estado del proyecto y de problemas, cambios y recomendaciones: [docs/auditoria-marketing-content-os.md](./docs/auditoria-marketing-content-os.md)
+Auditoría integral vigente de arquitectura, flujo, credenciales, hallazgos y plan de mejora: [docs/auditoria-integral-marketing-content-os.md](./docs/auditoria-integral-marketing-content-os.md). El [plan funcional y de cómputo](./docs/plan-funcionalidad-y-computo.md) detalla correcciones, matriz de pruebas reales, opciones para trabajar sin GPU y el orden para cerrar seguridad. La [auditoría anterior](./docs/auditoria-marketing-content-os.md) conserva las verificaciones históricas del 16 de octubre.
+
+Para retomar el desarrollo desde el estado verificado, consulta el [manifiesto JSON de estado y trazabilidad](./docs/estado-y-trazabilidad-marketing-content-os.json): inventario de módulos, flujo, repositorios, variables de configuración (sin valores secretos), correcciones, pruebas, límites conocidos y próximos pasos para agentes.
 
 ## Estructura
 
 - `apps/api`: API FastAPI y ciclo de vida de trabajos.
 - `apps/dashboard`: dashboard Next.js con seguimiento por etapa e importación de medios locales.
 - `apps/voice-studio-space`: Space Gradio privado de VoiceStudio/OmniVoice sobre ZeroGPU.
-- `apps/script-generator-space`: Space Gradio privado de Qwen3-4B sobre ZeroGPU.
+- `apps/script-generator-space`: Space Gradio privado de Qwen3-1.7B en CPU, con Qwen3-4B/ZeroGPU opcional.
 - `packages/python/core`: esquemas compartidos.
 - `packages/python/adapters`: clientes para servicios externos.
 - `packages/node/video-templates`: punto de entrada de plantillas Remotion.
 - `notebooks`: workers iniciales para investigacion y render.
-- `infra`: Docker Compose para PostgreSQL, Redis y servicios locales.
+- `infra`: Docker Compose para PostgreSQL y servicios locales; Redis y publisher se activan solo con perfiles opcionales.
 - `scripts/clone_third_party.py`: clona los repositorios indicados solo cuando se ejecuta.
 
 ## Requisitos
@@ -41,7 +43,7 @@ curl http://localhost:8000/healthz
 API: `http://localhost:8000`; dashboard de desarrollo: `http://localhost:3001`.
 Para iniciar el dashboard fuera de Docker: `cd apps/dashboard && npm install && npm run dev`.
 
-El token `WORKER_API_TOKEN` protege las rutas de reserva, renovacion, finalizacion y fallo de los trabajos. Redis queda preparado para tareas futuras; el MVP actual persiste y reserva trabajos desde PostgreSQL. Los trabajos en ejecucion renuevan su reserva cada minuto; si Colab se desconecta, la reserva vence y el trabajo vuelve a la cola hasta un maximo de tres intentos.
+El token `WORKER_API_TOKEN` protege las rutas de reserva, renovacion, finalizacion y fallo de los trabajos. El MVP persiste y reserva trabajos desde PostgreSQL; Redis puede arrancarse con `--profile future-queue` cuando se conecte una cola real. Publisher también es opcional (`--profile publisher`) y no participa en el flujo del dashboard. Los trabajos en ejecucion renuevan su reserva cada minuto; si Colab se desconecta, la reserva vence y el trabajo vuelve a la cola hasta un maximo de tres intentos.
 
 ### Probar workers de Colab contra la app local
 
@@ -90,12 +92,12 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
 
    La plantilla local [`.env.colab.example`](./.env.colab.example) reúne las variables requeridas por los workers. Puedes copiarla a `.env.colab` para preparar tus valores localmente; esa copia queda ignorada por Git. Colab no importa el archivo automáticamente: transfiere cada valor directamente al panel **Secrets** del notebook. No subas `.env.colab` a Drive, al repositorio ni al chat. `API_BASE_URL` debe ser la URL HTTPS del Quick Tunnel activo, sin `/` final; cambia al reiniciar el túnel.
 
-   - En `01_research_scrapegraph.ipynb`: `API_BASE_URL` (la URL `trycloudflare.com`, sin `/` final), `WORKER_API_TOKEN`, `SCRIPT_SPACE_URL` (`https://javiertarazon-marketing-script-generator.hf.space`), `VOICE_STUDIO_URL` (`https://javiertarazon-voice-studio-agent.hf.space`), `HF_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`.
+   - En `01_research_scrapegraph.ipynb`: `API_BASE_URL` (la URL `trycloudflare.com`, sin `/` final), `WORKER_API_TOKEN`, `SCRIPT_SPACE_URL` (`https://javiertarazon-marketing-script-generator.hf.space`), `VOICE_STUDIO_URL` (`https://javiertarazon-voice-studio-agent.hf.space`), `HF_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`. Opcional: `YOUTUBE_API_KEY` y `YOUTUBE_REGION_CODE` para ordenar videos recientes de YouTube por vistas por hora; sin esa clave la búsqueda usa el índice web y no puede afirmar tendencias cuantitativas.
    - En `02_render_remotion.ipynb`: `API_BASE_URL`, `WORKER_API_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`.
 
    Crea `HF_TOKEN` en Hugging Face como token de solo lectura que tenga acceso a tus dos Spaces privados. No compartas ese token en el chat. Los Spaces ya desplegados son privados y usan ZeroGPU, que puede poner las solicitudes en cola y limitar la cuota diaria.
 
-7. Abre ambos notebooks en Google Colab y ejecuta sus celdas desde arriba. Deja la ultima celda ejecutandose en cada runtime: los workers consultan las colas cada 30 segundos y publican la etapa actual en el dashboard. Colab gratuito puede desconectar o limitar runtimes; no es un worker 24/7. Si reinicias el tunel, actualiza `API_BASE_URL` en Secrets y vuelve a ejecutar la celda de configuracion.
+7. Abre ambos notebooks en Google Colab y ejecuta sus celdas desde arriba. La última celda procesa **un trabajo** y termina; vuelve a ejecutarla manualmente para procesar el siguiente. Esto evita dejar una sesión gratuita conectada indefinidamente, algo que Colab puede interrumpir. Si reinicias el túnel, actualiza `API_BASE_URL` en Secrets y vuelve a ejecutar la celda de configuración.
 
 8. Abre `http://localhost:3001`, crea un trabajo con tema, selecciona las redes y, opcionalmente, agrega una URL de referencia o una voz/fondo propio. El worker busca páginas públicas indexadas con ScrapeGraphAI y DuckDuckGo; no requiere credenciales de esas redes. El dashboard muestra etapa, porcentaje, fuentes extraídas y el resultado o bloqueo por plataforma. La cobertura depende de la indexación y del acceso anónimo permitido por cada sitio; no se evaden inicios de sesión, CAPTCHA ni controles. Al completar investigación y voz, la API crea el trabajo de render. El MP4 final se obtiene mediante un enlace firmado temporal.
 
@@ -127,9 +129,11 @@ Para apagar los servicios locales: `docker compose --profile scheduler --env-fil
 
 Clona primero VoiceStudio con `python scripts/clone_third_party.py`. Instala la CLI `hf` en WSL (`uv tool install huggingface_hub`) e inicia sesion (`hf auth login`) con un token que permita crear Spaces y subir archivos. La cuenta debe ser elegible para ZeroGPU; las cuentas gratuitas requieren correo verificado y mas de 30 dias de antiguedad, y tienen cuota diaria. Ejecuta `bash scripts/deploy_hf_spaces.sh`: crea/actualiza `voice-studio-agent` como Space privado Gradio con hardware `zero-a10g` (el identificador de ZeroGPU en la CLI actual) y publica la app. No se selecciona T4 ni hardware facturable. Tras publicar, `hf spaces zero-gpu quota` consulta el saldo diario.
 
-El Space carga el modelo `k2-fsa/OmniVoice` mediante el paquete del repositorio VoiceStudio y reserva ZeroGPU solo durante cada inferencia. El endpoint Gradio `/predict` recibe texto y atributos de voz, y opcionalmente una muestra WAV más su transcripción exacta para clonación zero-shot. Llama con `gradio_client` y un token HF de solo lectura. Añade `VOICE_STUDIO_URL` y `HF_TOKEN` a `.env` para el cliente local, y guarda `HF_TOKEN` como secreto de Colab para invocar el Space privado. Cada inferencia solicita como máximo 120 segundos de GPU; Hugging Face puede multiplicar la reserva efectiva según el hardware y rechazar la llamada si no queda cuota suficiente. Una prueba de síntesis de texto devolvió WAV válido de 24 kHz; la clonación con muestra propia y el flujo Colab aún requieren una prueba end-to-end.
+El Space carga `k2-fsa/OmniVoice` de forma diferida en CPU por defecto (máximo dos hilos), así las llamadas no solicitan ZeroGPU ni gastan esa cuota. El endpoint Gradio `/predict` recibe texto y atributos de voz, y opcionalmente una muestra WAV más su transcripción exacta para clonación zero-shot. La CPU puede tardar minutos por una narración; el notebook ahora tolera esperas largas. Para volver a GPU se debe configurar `USE_ZEROGPU=1` y se consumirá la cuota compartida. La clonación con una muestra propia y el flujo Colab aún requieren prueba end-to-end.
 
-Para generar investigación editorial y guiones, `apps/script-generator-space` carga `Qwen/Qwen3-4B` de forma diferida en ZeroGPU. Inicia sesión con `hf auth login` y ejecuta `bash scripts/deploy_hf_script_space.sh`; el script crea un Space privado `marketing-script-generator` con hardware `zero-a10g`. Configura `SCRIPT_SPACE_URL` con la URL asignada y guarda un token HF de solo lectura en el secreto `HF_TOKEN` de Colab. El Space usa el mismo token que el Space de voz. Revisa el build antes de usarlo; no se despliega automáticamente ni se ha verificado la elegibilidad/cuota de tu cuenta.
+Para generar investigación editorial y guiones, `apps/script-generator-space` usa `Qwen/Qwen3-1.7B` en CPU por defecto, con dos hilos; la GPU opcional (`USE_ZEROGPU=1`) usa Qwen3-4B y consume cuota. Inicia sesión con `hf auth login` y ejecuta `bash scripts/deploy_hf_script_space.sh`; el script crea/actualiza el Space privado `marketing-script-generator` en ZeroGPU. Configura `SCRIPT_SPACE_URL` y guarda un token HF de solo lectura en el secreto `HF_TOKEN` de Colab. El Space usa el mismo token que el Space de voz. Revisa el build y la cuota antes de producción; el despliegue no se ejecuta automáticamente.
+
+En la cuenta `javiertarazon` están publicados los Spaces privados [Marketing Script Generator](https://huggingface.co/spaces/javiertarazon/marketing-script-generator) y [VoiceStudio](https://huggingface.co/spaces/javiertarazon/voice-studio-agent). La ruta CPU nueva pasó pruebas autenticadas el 18-oct-2026: guion Qwen en 19 s y voz WAV en 39 s; `USE_ZEROGPU=0` quedó fijado en ambos y el saldo se mantuvo en 265.64/300 GPU-segundos antes y después. El token OAuth de `hf auth login` está en la caché de WSL, pero `HF_TOKEN` sigue vacío en `.env`. Para ejecutar el notebook agrega a Colab Secrets un token HF de lectura con acceso a ambos Spaces. Colab no puede leer la caché local de WSL; no pegues tokens en celdas ni en el repositorio.
 
 ZeroGPU gratuito tiene cuota diaria y colas, no es inferencia ilimitada ni un SLA. Las condiciones de elegibilidad y cuota pueden cambiar; verifica la disponibilidad desde tu cuenta Hugging Face. El worker usa la biblioteca open-source ScrapeGraphAI (`search_on_web`) para buscar con DuckDuckGo páginas públicas de las redes elegidas; descarga las páginas accesibles con `requests` y BeautifulSoup. Si una página no es legible, puede utilizar únicamente el fragmento público que devuelve el índice de DuckDuckGo y lo etiqueta como tal en el dashboard. Esta búsqueda no usa APIs ni credenciales de YouTube, Reddit, X, Instagram, TikTok o Facebook. Puede omitir publicaciones no indexadas, devolver resultados antiguos, encontrar perfiles/páginas de negocio en lugar de publicaciones o no acceder a páginas dinámicas/privadas; no equivale a escucha social en tiempo real ni a métricas de tendencias. Los estados por plataforma muestran páginas extraídas, fragmentos, ausencia de contenido legible o errores. El Space Qwen recibe el texto recopilado y produce notas y guion en una inferencia; no garantiza exactitud factual, así que revisa fuentes y guion antes de publicar. No se usa OpenAI.
 
@@ -137,7 +141,7 @@ No publico HyperFrames ni Open-Generative-AI como Spaces Gradio falsos: ambos re
 
 ## Google Colab
 
-Abre `notebooks/01_research_scrapegraph.ipynb` o `notebooks/02_render_remotion.ipynb` en Colab con la cuenta `javiertarazpon@gmail.com` (sube los archivos desde tu equipo o clona este repositorio despues de publicarlo en GitHub). Este proyecto no recibe acceso a tu Drive ni a tu cuenta. Guarda secretos en **Secrets** de Colab, no en celdas compartidas. Ambos notebooks necesitan `API_BASE_URL`, `WORKER_API_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`. El notebook de investigación también necesita `SCRIPT_SPACE_URL`, `VOICE_STUDIO_URL` y un `HF_TOKEN` de solo lectura con acceso a ambos Spaces privados. Investiga y genera el guion mediante Qwen en ZeroGPU, llama a VoiceStudio por Gradio con la opción de usar una muestra de voz, sube WAV a R2 privado y encola el render; el segundo notebook descarga el audio y los medios propios para componer el MP4.
+Abre `notebooks/01_research_scrapegraph.ipynb` o `notebooks/02_render_remotion.ipynb` en Colab con la cuenta `javiertarazpon@gmail.com` (sube los archivos desde tu equipo o clona este repositorio despues de publicarlo en GitHub). Este proyecto no recibe acceso a tu Drive ni a tu cuenta. Guarda secretos en **Secrets** de Colab, no en celdas compartidas. Ambos notebooks necesitan `API_BASE_URL`, `WORKER_API_TOKEN`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`. El notebook de investigación también necesita `SCRIPT_SPACE_URL`, `VOICE_STUDIO_URL` y un `HF_TOKEN` de solo lectura con acceso a ambos Spaces privados. Investiga y genera el guion con Qwen3-1.7B en CPU por defecto, llama a VoiceStudio por Gradio con la opción de usar una muestra de voz, sube WAV a R2 privado y encola el render; el segundo notebook descarga el audio y los medios propios para componer el MP4.
 
 Los notebooks mantienen workers de polling mientras sus celdas y runtimes sigan activos. Un Quick Tunnel permite que Colab consulte durante pruebas la API propia de WSL mediante HTTPS temporal; no mantiene el equipo despierto ni elude las restricciones/cuotas de Colab.
 
@@ -155,7 +159,7 @@ python -m pytest tests
 
 ## Repositorios externos
 
-`python scripts/clone_third_party.py` clona shallow en WSL los repositorios indicados, excepto `MoneyPrinterTurbo` (excluido a petición); omite clones existentes y no actualiza ni sobrescribe destinos previos. No hace falta clonar esos repositorios completos en Colab: cada notebook instala sus dependencias en el runtime. Al publicar el Space de voz, el script empaqueta solo el módulo `omnivoice` y su licencia desde el clon local de VoiceStudio, evitando instalar las dependencias de escritorio/ASR que este MVP no usa. `marketingskills` aporta instrucciones, no una librería runtime. HyperFrames, OpenMontage y Open-Generative-AI quedan clonados como fuentes, pero no son dependencias activas de este MVP. Revisa licencias antes de uso comercial: VoiceStudio es AGPL-3.0, Qwen3-4B es Apache-2.0 y Remotion tiene condiciones de licencia comercial.
+`python scripts/clone_third_party.py` clona shallow en WSL los repositorios indicados, excepto `MoneyPrinterTurbo` (excluido a petición); omite clones existentes y no actualiza ni sobrescribe destinos previos. No hace falta clonar esos repositorios completos en Colab: cada notebook instala sus dependencias en el runtime. Al publicar el Space de voz, el script empaqueta solo el módulo `omnivoice` y su licencia desde el clon local de VoiceStudio, evitando instalar las dependencias de escritorio/ASR que este MVP no usa. `marketingskills` aporta instrucciones, no una librería runtime. HyperFrames, OpenMontage y Open-Generative-AI quedan clonados como fuentes, pero no son dependencias activas de este MVP. Revisa licencias antes de uso comercial: VoiceStudio es AGPL-3.0, los modelos Qwen3 son Apache-2.0 y Remotion tiene condiciones de licencia comercial.
 
 ## Despliegue y seguridad
 

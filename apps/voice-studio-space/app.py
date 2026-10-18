@@ -1,3 +1,6 @@
+import os
+import threading
+
 import gradio as gr
 import numpy as np
 import spaces
@@ -6,14 +9,47 @@ from omnivoice import OmniVoice
 from omnivoice.utils.dtype import tts_dtype_name
 
 MODEL_ID = "k2-fsa/OmniVoice"
-MODEL = OmniVoice.from_pretrained(
-    MODEL_ID,
-    device_map="cuda",
-    dtype=getattr(torch, tts_dtype_name("cuda")),
-)
+USE_ZEROGPU = os.getenv("USE_ZEROGPU", "0").strip().lower() in {"1", "true", "yes"}
+DEVICE = "cuda" if USE_ZEROGPU else "cpu"
+MODEL = None
+MODEL_LOCK = threading.Lock()
+
+if not USE_ZEROGPU:
+    # Cap CPU threads to the shared Space allotment on free ZeroGPU hosts.
+    torch.set_num_threads(max(1, min(2, os.cpu_count() or 1)))
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
 
 
-@spaces.GPU(duration=120)
+def get_model() -> OmniVoice:
+    global MODEL
+    if MODEL is None:
+        with MODEL_LOCK:
+            if MODEL is None:
+                MODEL = OmniVoice.from_pretrained(
+                    MODEL_ID,
+                    device_map=DEVICE,
+                    dtype=getattr(torch, tts_dtype_name(DEVICE)),
+                )
+    return MODEL
+
+
+@spaces.GPU(duration=1)
+def _gpu_runtime_marker() -> None:
+    """Register ZeroGPU support; the default CPU path never invokes this."""
+    return None
+
+
+def maybe_request_gpu(function):
+    """Keep CPU as the free default; opt into quota-backed ZeroGPU explicitly."""
+    if USE_ZEROGPU:
+        return spaces.GPU(duration=120)(function)
+    return function
+
+
+@maybe_request_gpu
 def generate_voice(
     text: str,
     gender: str,
@@ -34,16 +70,17 @@ def generate_voice(
             "ref_audio": reference_audio,
             "ref_text": reference_text.strip(),
         }
-    audio = MODEL.generate(
+    model = get_model()
+    audio = model.generate(
         text=text.strip(),
         language="Spanish",
         instruct=instruct or None,
         **reference,
     )
     waveform = audio[0].squeeze(0).float().cpu().numpy()
-    if MODEL.sampling_rate is None:
+    if model.sampling_rate is None:
         raise RuntimeError("OmniVoice no informo la frecuencia de muestreo")
-    return MODEL.sampling_rate, waveform
+    return model.sampling_rate, waveform
 
 
 demo = gr.Interface(

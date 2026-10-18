@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
@@ -31,6 +31,15 @@ class ContentRequest(BaseModel):
     topic: str = Field(min_length=1, max_length=500)
     style: str = Field(default="financial-news", min_length=1, max_length=100)
     duration_seconds: int = Field(default=35, ge=1, le=3600)
+    voice_gender: Literal["female", "male"] = "female"
+    voice_age: Literal["child", "teenager", "young adult", "middle-aged", "elderly"] = "young adult"
+    voice_pitch: Literal[
+        "very low pitch",
+        "low pitch",
+        "moderate pitch",
+        "high pitch",
+        "very high pitch",
+    ] = "moderate pitch"
     platforms: list[ResearchPlatform] = Field(default_factory=list, max_length=6)
     source_url: HttpUrl | None = None
     voice_reference_asset_id: UUID | None = None
@@ -67,6 +76,7 @@ class JobCreate(BaseModel):
 
 class JobRecord(BaseModel):
     job_id: UUID
+    parent_job_id: UUID | None = None
     worker: WorkerType
     status: JobStatus
     request: dict[str, Any]

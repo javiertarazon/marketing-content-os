@@ -17,6 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    profiles: ["future-queue"]
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -38,22 +39,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
 
   dashboard:
     build:
       context: ../apps/dashboard
       args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
         NEXT_PUBLIC_MIXPOST_URL: ${MIXPOST_URL:-http://localhost:3002}
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
     ports:
       - "127.0.0.1:3001:3000"
     depends_on:
       - api
 
   publisher:
+    profiles: ["publisher"]
     build:
       context: ../apps/publisher-service
       dockerfile: Dockerfile

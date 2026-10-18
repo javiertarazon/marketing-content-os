@@ -116,6 +116,7 @@ def init_database() -> None:
             CREATE TABLE IF NOT EXISTS jobs (
                 job_id UUID PRIMARY KEY,
                 worker TEXT NOT NULL CHECK (worker IN ('research', 'render')),
+                parent_job_id UUID REFERENCES jobs(job_id),
                 status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
                 request JSONB NOT NULL,
                 progress JSONB NOT NULL DEFAULT '{"stage":"queued","message":"En cola","percent":0}'::jsonb,
@@ -148,6 +149,9 @@ def init_database() -> None:
             "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS progress JSONB"
         )
         connection.execute(
+            "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS parent_job_id UUID REFERENCES jobs(job_id)"
+        )
+        connection.execute(
             """
             UPDATE jobs
             SET progress = jsonb_build_object(
@@ -173,6 +177,9 @@ def init_database() -> None:
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs (worker, created_at) WHERE status = 'queued'"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS jobs_parent_job_idx ON jobs (parent_job_id) WHERE parent_job_id IS NOT NULL"
         )
 
 
@@ -220,6 +227,7 @@ def require_worker_token(
 def serialize_job(row: dict) -> JobRecord:
     return JobRecord(
         job_id=row["job_id"],
+        parent_job_id=row.get("parent_job_id"),
         worker=row["worker"],
         status=row["status"],
         request=row["request"],
@@ -576,9 +584,9 @@ def update_leased_job(
             SET status = %s, output = %s::jsonb, error = %s,
                 lease_token = NULL, lease_expires_at = NULL, updated_at = now(),
                 progress = jsonb_build_object(
-                    'stage', %s,
-                    'message', %s,
-                    'percent', %s
+                    'stage', %s::text,
+                    'message', %s::text,
+                    'percent', %s::integer
                 )
             WHERE job_id = %s AND status = 'running' AND lease_token = %s
             RETURNING *
@@ -630,12 +638,13 @@ def complete_job(
             render_request = {**row["request"], **completion.output}
             connection.execute(
                 """
-                INSERT INTO jobs (job_id, worker, status, request, progress)
-                VALUES (%s, 'render', 'queued', %s::jsonb,
+                INSERT INTO jobs (job_id, worker, parent_job_id, status, request, progress)
+                VALUES (%s, 'render', %s, 'queued', %s::jsonb,
                         '{"stage":"queued","message":"Esperando worker de render","percent":0}'::jsonb)
                 """,
                 (
                     UUID(bytes=secrets.token_bytes(16), version=4),
+                    job_id,
                     json.dumps(render_request),
                 ),
             )
@@ -650,7 +659,7 @@ def complete_job(
             UPDATE jobs
             SET status = 'succeeded', output = %s::jsonb, error = NULL,
                 lease_token = NULL, lease_expires_at = NULL, updated_at = now(),
-                progress = jsonb_build_object('stage', 'completed', 'message', %s, 'percent', 100)
+                progress = jsonb_build_object('stage', 'completed', 'message', %s::text, 'percent', 100)
             WHERE job_id = %s
             RETURNING *
             """,

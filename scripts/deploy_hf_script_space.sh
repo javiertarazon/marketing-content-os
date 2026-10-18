@@ -16,6 +16,11 @@ fi
 IDENTITY="$("$HF_COMMAND" auth whoami --format json)"
 USERNAME="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["user"])' <<<"$IDENTITY")"
 SPACE_ID="${USERNAME}/marketing-script-generator"
+STAGING_DIR="$(mktemp -d)"
+trap 'rm -rf -- "$STAGING_DIR"' EXIT
+cp -a "${ROOT}/apps/script-generator-space/." "$STAGING_DIR/"
+find "$STAGING_DIR" -type d \( -name __pycache__ -o -name .pytest_cache \) -prune -exec rm -rf -- {} +
+find "$STAGING_DIR" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
 echo "Creando/verificando el Space privado ZeroGPU ${SPACE_ID}"
 "$HF_COMMAND" repos create "$SPACE_ID" \
@@ -28,7 +33,7 @@ echo "Creando/verificando el Space privado ZeroGPU ${SPACE_ID}"
 "$HF_COMMAND" spaces settings "$SPACE_ID" --hardware zero-a10g
 
 echo "Publicando el generador Qwen3 en ${SPACE_ID}"
-"$HF_COMMAND" upload "$SPACE_ID" "${ROOT}/apps/script-generator-space" . \
+"$HF_COMMAND" upload "$SPACE_ID" "$STAGING_DIR" . \
   --type space \
   --commit-message "Deploy private Qwen3 ZeroGPU script generator"
 

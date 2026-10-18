@@ -14,12 +14,14 @@ tags:
 ---
 
 Private Gradio Space for generating research notes and short Spanish video
-scripts with `Qwen/Qwen3-4B`.
+scripts. By default it runs `Qwen/Qwen3-1.7B` on CPU, capped at two threads,
+so it does not consume ZeroGPU quota. The first request loads the model and may
+take several minutes; later requests reuse it while the Space remains active.
 
-Create the Space as **Private** with ZeroGPU hardware. The free personal tier
-currently allows up to two ZeroGPU Spaces and five minutes of GPU use per day;
-requests can queue and the quota is shared with other ZeroGPU work on the
-account. Do not use this service for unattended or time-critical production.
+The Space can remain private on its current ZeroGPU host; its default code path
+does not request GPU. Set `USE_ZEROGPU=1` only to opt back into
+`Qwen/Qwen3-4B` on the shared GPU quota. CPU Basic is a separate hardware tier
+and may require an eligible paid Hub subscription for Gradio Spaces.
 
 Call the `/generate` Gradio endpoint with `gradio_client` and a read-only
 Hugging Face token that can access this private Space. Never commit that token.
