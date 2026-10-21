@@ -24,6 +24,26 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from psycopg.rows import dict_row
+# Settings import
+import settings
+
+settings_obj = settings.get_settings()
+
+settings = get_settings()
+# Override raw env vars with validated settings
+DATABASE_URL = settings.DATABASE_URL
+WORKER_API_TOKEN = settings.WORKER_API_TOKEN
+JOB_LEASE_SECONDS = settings.JOB_LEASE_SECONDS
+MAX_JOB_ATTEMPTS = settings.MAX_JOB_ATTEMPTS
+MAX_ASSET_BYTES = settings.MAX_ASSET_BYTES
+S3_ENDPOINT_URL = settings.S3_ENDPOINT_URL
+S3_BUCKET = settings.S3_BUCKET
+S3_ACCESS_KEY_ID = settings.S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY = settings.S3_SECRET_ACCESS_KEY
+HF_TOKEN = settings.HF_TOKEN
+SCRIPT_SPACE_URL = settings.SCRIPT_SPACE_URL
+VOICE_STUDIO_URL = settings.VOICE_STUDIO_URL
+YOUTUBE_API_KEY = settings.YOUTUBE_API_KEY
 
 from core.schemas import (
     JobCompletion,

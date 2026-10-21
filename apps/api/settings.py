@@ -1,0 +1,90 @@
+# apps/api/settings.py
+"""Pydantic Settings for FastAPI application.
+
+This module defines a strict configuration loader using ``pydantic-settings``. It reads
+environment variables from the ``.env`` file located at the repository root and validates
+them against explicit Python types. Any missing or malformed variable will raise a
+validation error at application start‑up, preventing the service from running with an
+inconsistent configuration.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application configuration loaded from environment variables.
+
+    The ``env_file`` points to the project root ``.env``. All fields are typed
+    strictly; pydantic will coerce where safe and raise otherwise.
+    """
+
+    # Core API configuration
+    DATABASE_URL: str = Field(..., description="PostgreSQL connection string")
+    API_BASE_URL: str = Field(..., description="Base URL for the FastAPI instance")
+    WORKER_API_TOKEN: str = Field(..., description="Secret token for worker authentication")
+
+    # Storage (S3 / R2) configuration
+    S3_ENDPOINT_URL: str = Field(..., description="Endpoint URL for S3 compatible storage")
+    S3_BUCKET: str = Field(..., description="Bucket name for media assets")
+    S3_ACCESS_KEY_ID: str = Field(..., description="Access key ID for storage")
+    S3_SECRET_ACCESS_KEY: str = Field(..., description="Secret access key for storage")
+
+    # Optional third‑party keys
+    HF_TOKEN: Optional[str] = Field(default=None, description="HuggingFace token for private spaces")
+    SCRIPT_SPACE_URL: Optional[str] = Field(default=None, description="URL of the script generation Space")
+    VOICE_STUDIO_URL: Optional[str] = Field(default=None, description="URL of the voice synthesis Space")
+    YOUTUBE_API_KEY: Optional[str] = Field(default=None, description="YouTube Data API key")
+
+    # Runtime configuration
+    JOB_LEASE_SECONDS: int = Field(default=300, ge=60, description="Lease duration for a job")
+    MAX_JOB_ATTEMPTS: int = Field(default=3, ge=1, description="Maximum retry attempts per job")
+    MAX_ASSET_BYTES: int = Field(default=250 * 1024 * 1024, description="Maximum size for uploaded assets")
+
+    # Enforce strict env file location and prevent secret leakage
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).parents[3] / ".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="forbid",
+    )
+
+    @field_validator("API_BASE_URL")
+    @classmethod
+    def ensure_https(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("API_BASE_URL must start with https://")
+        return v.rstrip("/")
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        if not v:
+            raise ValueError("DATABASE_URL cannot be empty")
+        return v
+
+    @field_validator("S3_ENDPOINT_URL")
+    @classmethod
+    def endpoint_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("S3_ENDPOINT_URL must be a valid URL")
+        return v.rstrip("/")
+
+
+def get_settings() -> Settings:
+    """Helper to instantiate settings and raise early if configuration is invalid."""
+    try:
+        return Settings()
+    except ValidationError as exc:
+        # Log the detailed validation errors before re‑raising.
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error("Invalid application configuration: %s", exc)
+        raise

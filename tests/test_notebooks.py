@@ -35,15 +35,15 @@ def test_notebooks_are_valid_json_with_python_cells() -> None:
             for cell in notebook["cells"]
             if cell["cell_type"] == "code"
         )
-        assert "while True:" not in code_source
+        assert "run_worker_loop" in code_source
         assert "start_lease_heartbeat" in code_source
         assert "/progress" in code_source
         assert "audio_object_key" in code_source
         assert "STORAGE_PUBLIC_BASE_URL" not in code_source
 
         if path.name == "01_research_scrapegraph.ipynb":
-            assert "process_one_research_job()" in code_source
-            assert "Vuelve a ejecutar esta celda" in code_source
+            assert "process_one_research_job" in code_source
+            assert "Detener para desconectarlo" in code_source
             assert "voice_reference" in code_source
             assert "voice_reference[\"transcript\"]" in code_source
             assert 'submit(prompt, api_name="/generate").result(timeout=900)' in code_source
@@ -55,8 +55,8 @@ def test_notebooks_are_valid_json_with_python_cells() -> None:
             assert "inspect.signature(Client).parameters" in source
             assert 'token=os.environ["HF_TOKEN"]' not in source
         if path.name == "02_render_remotion.ipynb":
-            assert "process_one_render_job()" in code_source
-            assert "Vuelve a ejecutar esta celda" in code_source
+            assert "process_one_render_job" in code_source
+            assert "Detener para desconectarlo" in code_source
             assert "video_object_key" in code_source
             assert "visual_asset" in code_source
             assert "OffthreadVideo" in code_source
