@@ -59,6 +59,8 @@ type WorkerSession = {
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const mixpostUrl = process.env.NEXT_PUBLIC_MIXPOST_URL || "http://localhost:3002";
+const openDispatchUrl =
+  process.env.NEXT_PUBLIC_OPEN_DISPATCH_URL || "http://localhost:8010";
 const RESEARCH_PLATFORMS = [
   { value: "youtube", label: "YouTube" },
   { value: "reddit", label: "Reddit" },
@@ -214,7 +216,15 @@ export default function Dashboard() {
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 32 }}>
       <h1>Marketing Content OS</h1>
       <p>Control local del pipeline. Los workers de Colab toman trabajos de la cola mientras sus sesiones estén activas.</p>
-      <p><a href={mixpostUrl} target="_blank" rel="noreferrer">Abrir Mixpost Lite para programar contenido</a></p>
+      <p>
+        <a href={openDispatchUrl} target="_blank" rel="noreferrer">
+          Abrir Open-Dispatch para programar contenido
+        </a>
+        {" · "}
+        <a href={mixpostUrl} target="_blank" rel="noreferrer">
+          Mixpost Lite (scheduler alternativo)
+        </a>
+      </p>
       <section aria-labelledby="workers-heading" style={{ border: "1px solid #ccc", padding: 16, margin: "24px 0" }}>
         <h2 id="workers-heading">Workers de Colab</h2>
         <p>Deja ejecutándose la celda worker de cada notebook. Si Colab se desconecta, vuelve a iniciarla; los trabajos pendientes permanecen en la cola local.</p>

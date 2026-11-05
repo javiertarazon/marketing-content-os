@@ -46,11 +46,15 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
         NEXT_PUBLIC_MIXPOST_URL: ${NEXT_PUBLIC_MIXPOST_URL:-http://localhost:3002/mixpost}
+        NEXT_PUBLIC_OPEN_DISPATCH_URL: ${NEXT_PUBLIC_OPEN_DISPATCH_URL:-http://localhost:8010}
     ports:
       - "127.0.0.1:3001:3000"
     depends_on:
       - api
 
+  # Publisher: encola la publicacion en el scheduler configurado.
+  #   PUBLISHER_BACKEND=open_dispatch (por defecto) -> Open-Dispatch
+  #   PUBLISHER_BACKEND=mixpost                     -> Mixpost (API Pro/Cloud)
   publisher:
     profiles: ["publisher"]
     build:
@@ -59,15 +63,23 @@ services:
     env_file:
       - ../.env
     environment:
-      # Desde la red de Docker el servicio Mixpost se llama por su nombre de
-      # servicio, no por localhost:3002 (que dentro del contenedor es el
+      PUBLISHER_BACKEND: ${PUBLISHER_BACKEND:-open_dispatch}
+      # Desde la red de Docker el scheduler se llama por su nombre de
+      # servicio, no por localhost:8010 (que dentro del contenedor es el
       # propio publisher).
+      OPEN_DISPATCH_BASE_URL: http://open-dispatch:8000
+      OPEN_DISPATCH_API_TOKEN: ${OPEN_DISPATCH_API_TOKEN:-}
+      # Volumen de medios compartido con Open-Dispatch: YouTube sube el MP4
+      # desde disco y exige una ruta RELATIVA bajo OPEN_DISPATCH_MEDIA_DIR.
+      # La ruta debe ser IDENTICA en los dos contenedores.
+      OPEN_DISPATCH_MEDIA_DIR: /media
       MIXPOST_BASE_URL: http://mixpost/mixpost/api
+    volumes:
+      - open_dispatch_media:/media
     ports:
       - "127.0.0.1:8001:8001"
     depends_on:
       - api
-      - mixpost
 
   worker-gateway:
     image: nginx:1.27-alpine
@@ -86,9 +98,65 @@ services:
     depends_on:
       - worker-gateway
 
+  # Open-Dispatch (MIT): scheduler de publicacion para TikTok, Instagram y
+  # YouTube. Se construye desde el repositorio oficial, fijado a un commit
+  # concreto para que el despliegue sea reproducible.
+  #   https://github.com/Matthew-Selvam/Open-Dispatch
+  open-dispatch:
+    profiles: ["dispatch"]
+    build:
+      context: https://github.com/Matthew-Selvam/Open-Dispatch.git#773dd54d4cec24a5995d8c722e9f02545cfba013
+    environment:
+      OPEN_DISPATCH_API_TOKEN: ${OPEN_DISPATCH_API_TOKEN:-}
+      OPEN_DISPATCH_MEDIA_DIR: /media
+      OPEN_DISPATCH_DATA: /data
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      TIKTOK_PRIVACY_LEVEL: ${TIKTOK_PRIVACY_LEVEL:-PUBLIC_TO_EVERYONE}
+      IG_USER_ID: ${IG_USER_ID:-}
+      IG_TOKEN: ${IG_TOKEN:-}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REFRESH_TOKEN: ${YOUTUBE_REFRESH_TOKEN:-}
+    ports:
+      - "127.0.0.1:8010:8000"
+    volumes:
+      - open_dispatch_data:/data
+      - open_dispatch_media:/media
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  open-dispatch-worker:
+    profiles: ["dispatch"]
+    build:
+      context: https://github.com/Matthew-Selvam/Open-Dispatch.git#773dd54d4cec24a5995d8c722e9f02545cfba013
+    environment:
+      OPEN_DISPATCH_API_TOKEN: ${OPEN_DISPATCH_API_TOKEN:-}
+      OPEN_DISPATCH_MEDIA_DIR: /media
+      OPEN_DISPATCH_DATA: /data
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      TIKTOK_PRIVACY_LEVEL: ${TIKTOK_PRIVACY_LEVEL:-PUBLIC_TO_EVERYONE}
+      IG_USER_ID: ${IG_USER_ID:-}
+      IG_TOKEN: ${IG_TOKEN:-}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REFRESH_TOKEN: ${YOUTUBE_REFRESH_TOKEN:-}
+    command: ["python", "-m", "scheduler.worker"]
+    volumes:
+      - open_dispatch_data:/data
+      - open_dispatch_media:/media
+    depends_on:
+      open-dispatch:
+        condition: service_healthy
+
+  # Mixpost (MIT en Lite) queda como scheduler ALTERNATIVO: su API REST solo
+  # esta disponible en Mixpost Pro o Cloud. Para usarlo hay que activar el
+  # perfil "scheduler" y poner PUBLISHER_BACKEND=mixpost.
   mixpost:
     image: inovector/mixpost:latest
-    profiles: ["scheduler", "publisher"]
+    profiles: ["scheduler"]
     environment:
       APP_NAME: Marketing Content OS
       APP_KEY: ${MIXPOST_APP_KEY:?Define MIXPOST_APP_KEY en .env}
@@ -120,7 +188,7 @@ services:
 
   mixpost-mysql:
     image: mysql/mysql-server:8.0
-    profiles: ["scheduler", "publisher"]
+    profiles: ["scheduler"]
     environment:
       MYSQL_DATABASE: ${MIXPOST_DB_NAME:-mixpost}
       MYSQL_USER: ${MIXPOST_DB_USER:-mixpost}
@@ -136,7 +204,7 @@ services:
 
   mixpost-redis:
     image: redis:7-alpine
-    profiles: ["scheduler", "publisher"]
+    profiles: ["scheduler"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -148,3 +216,5 @@ volumes:
   mixpost_storage:
   mixpost_logs:
   mixpost_mysql:
+  open_dispatch_data:
+  open_dispatch_media:
