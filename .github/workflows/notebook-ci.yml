@@ -47,6 +47,14 @@ jobs:
           source .venv/bin/activate
           pytest -q
 
+      - name: Smoke test the publisher against a simulated Open-Dispatch
+        # No necesita Docker, red ni credenciales: el script levanta un
+        # Open-Dispatch simulado y el publisher con uvicorn, y comprueba el
+        # contrato de dispatch, la autenticacion y las guardas de la URL.
+        run: |
+          source .venv/bin/activate
+          python scripts/smoke_publisher.py
+
       - name: Typecheck and build dashboard
         run: |
           npm run --prefix apps/dashboard build
