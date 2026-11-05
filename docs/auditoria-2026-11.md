@@ -5,6 +5,10 @@
 
 ---
 
+> **Actualización de 5-nov-2026 (posterior a esta auditoría):** el publisher ya **no** habla Mixpost. Se reescribió contra **Open-Dispatch** (MIT), que publica en TikTok, Instagram y YouTube con API propia y sin coste; la API REST de Mixpost Lite (gratis) no existe. El adaptador de Mixpost se conserva como alternativa (`PUBLISHER_BACKEND=mixpost`).
+>
+> Estado vigente, contrato verificado y pasos pendientes: `docs/estado-y-trazabilidad-marketing-content-os.json` (sección `scheduler_open_dispatch`) y la sección «Publicación automática» del README. Este documento se conserva como foto del estado en el momento de la auditoría.
+
 ## 1. De dónde viene el proyecto
 
 El repositorio estaba **vacío**: sin `HEAD`, `config` ni `refs` en `.git`, sólo 258 objetos sueltos. Se reconstruyó el árbol del commit más reciente y se recuperaron **71 archivos**, preservando los **12 commits** originales (`be2c449` → `e0acb49`, 14–21 oct 2026).
