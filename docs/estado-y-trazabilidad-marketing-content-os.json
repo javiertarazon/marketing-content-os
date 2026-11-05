@@ -695,7 +695,7 @@
       "evidence": "El script levanta un scheduler falso y el publisher con uvicorn reales.",
       "fix": "scripts/smoke_publisher.py comprueba la autenticacion Bearer, la forma de la ContentUnit, el rechazo 422 de una URL ajena al almacenamiento SIN generar trafico, el rechazo de plataforma no soportada y GET /v1/integrations.",
       "status": "aplicado",
-      "verification": "SMOKE OK: publisher <-> Open-Dispatch"
+      "verification": "SMOKE OK: publisher <-> Open-Dispatch. La suite completa queda en 48 tests (17 propios del adaptador y del publisher)."
     }
   ],
   "files_changed": [
@@ -1065,7 +1065,7 @@
   "verification": [
     {
       "comando": ".venv\\Scripts\\python -m pytest -q",
-      "resultado": "47 passed, 2 warnings"
+      "resultado": "48 passed, 2 warnings"
     },
     {
       "comando": ".venv\\Scripts\\python scripts/smoke_publisher.py",
