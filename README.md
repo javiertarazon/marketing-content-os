@@ -153,6 +153,8 @@ El panel de Open-Dispatch queda en `http://localhost:8010` y su cola muestra el 
 
 El publicador solo acepta vídeos HTTPS del host de `STORAGE_PUBLIC_BASE_URL`; cualquier otra URL se rechaza con 422 **antes** de generar tráfico. `GET /v1/integrations` devuelve las plataformas publicables con la configuración actual.
 
+**Limitación conocida de la cola.** Sin `DATABASE_URL` ni `REDIS_URL`, Open-Dispatch usa su backend JSONL, que su propio código documenta como «single-process»: el cerrojo es un `threading.Lock` y no protege entre el proceso de la API y el del worker. Es el despliegue de referencia de upstream y funciona en uso normal, pero para carga alta conviene extender la imagen con `psycopg2-binary` y definir `DATABASE_URL`: el backend de Postgres usa `SELECT ... FOR UPDATE SKIP LOCKED` sobre la tabla `open_dispatch_queue` y sí admite varios procesos.
+
 ### Mixpost queda como scheduler alternativo
 
 El adaptador de Mixpost sigue en el repo y se activa con `PUBLISHER_BACKEND=mixpost`, pero **su API REST solo existe en Mixpost Pro (pago único de USD 299) o en Mixpost Cloud**: la edición Lite (MIT, gratuita) no la incluye, ni MCP, ni webhooks, según <https://mixpost.app/pricing>. Para levantarlo junto con sus servicios aislados de MySQL y Redis:

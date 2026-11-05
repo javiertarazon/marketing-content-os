@@ -1213,6 +1213,20 @@
       "open-dispatch-worker": "worker que consume la cola (perfil 'dispatch')",
       "publisher": "encola las publicaciones y descarga los MP4 al volumen compartido"
     },
-    "volumen_compartido": "open_dispatch_media montado en /media en los tres servicios"
+    "volumen_compartido": "open_dispatch_media montado en /media en los tres servicios",
+    "limitaciones_conocidas": [
+      {
+        "ambito": "cola del scheduler",
+        "detalle": "Sin DATABASE_URL ni REDIS_URL, Open-Dispatch usa su backend JSONL, que upstream documenta como 'single-process': api/queue.py usa un threading.Lock, que no protege entre el proceso de la API y el del worker. El despliegue del compose reproduce el compose de referencia de upstream.",
+        "mitigacion": "Extender la imagen con psycopg2-binary y definir DATABASE_URL: el backend de Postgres usa SELECT ... FOR UPDATE SKIP LOCKED sobre la tabla open_dispatch_queue y admite varios procesos. La imagen oficial no incluye psycopg2 ni redis.",
+        "estado": "documentado, no bloqueante para uso normal"
+      },
+      {
+        "ambito": "descubrimiento de canales",
+        "detalle": "Open-Dispatch no expone un endpoint JSON con las plataformas configuradas por variable de entorno (solo el panel HTML). GET /v1/integrations combina el .env compartido con GET /api/profiles.",
+        "mitigacion": "Implementado en el adaptador; documentado en el README.",
+        "estado": "resuelto"
+      }
+    ]
   }
 }

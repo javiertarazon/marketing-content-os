@@ -102,6 +102,13 @@ services:
   # YouTube. Se construye desde el repositorio oficial, fijado a un commit
   # concreto para que el despliegue sea reproducible.
   #   https://github.com/Matthew-Selvam/Open-Dispatch
+  # Nota sobre la cola: sin DATABASE_URL ni REDIS_URL, Open-Dispatch usa su
+  # backend JSONL, que upstream documenta como "single-process" (el lock es un
+  # threading.Lock, no protege entre el proceso API y el worker). Es el mismo
+  # despliegue de referencia del proyecto upstream y funciona en uso normal, pero
+  # para carga alta conviene extender la imagen con psycopg2-binary y definir
+  # DATABASE_URL: el backend Postgres usa SELECT ... FOR UPDATE SKIP LOCKED sobre
+  # la tabla open_dispatch_queue y si admite varios procesos.
   open-dispatch:
     profiles: ["dispatch"]
     build:
