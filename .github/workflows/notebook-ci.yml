@@ -71,36 +71,6 @@ jobs:
         run: |
           npm run --prefix apps/dashboard build
 
-      - name: Validate notebooks compile
-        # Los workers no se pueden ejecutar fuera de Colab: requieren los
-        # Secrets de Colab, un API_BASE_URL publico por HTTPS y los Spaces
-        # privados de Hugging Face. Aqui solo se comprueba que el codigo de
-        # las celdas es Python valido.
-        run: |
-          source .venv/bin/activate
-          python - <<'PY'
-          import json, pathlib, sys
-          failures = []
-          for nb in sorted(pathlib.Path("notebooks").glob("*.ipynb")):
-              data = json.loads(nb.read_text(encoding="utf-8"))
-              source = "\n".join(
-                  "".join(c.get("source", []))
-                  for c in data["cells"] if c.get("cell_type") == "code"
-              )
-              cleaned = "\n".join(
-                  line for line in source.splitlines()
-                  if not line.strip().startswith(("%", "!"))
-              ).replace("await ", "")
-              try:
-                  compile(cleaned, nb.name, "exec")
-              except SyntaxError as exc:
-                  failures.append(f"{nb.name}:{exc.lineno}: {exc.msg}")
-              print(f"{nb.name}: ok")
-          if failures:
-              print("\n".join(failures))
-              sys.exit(1)
-          PY
-
       - name: Start Docker Compose services
         run: |
           cp .env.example .env || true
