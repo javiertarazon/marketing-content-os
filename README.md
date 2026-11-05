@@ -193,6 +193,23 @@ El publicador usa la API real de Mixpost (`GET /workspaces`, `GET /{workspace}/a
 
 Mixpost Lite sirve la API y la UI bajo el prefijo `/mixpost` (`MIXPOST_CORE_PATH`), por eso las URLs terminan en `/mixpost/api`.
 
+
+### La CI no arranca: bloqueo del lado de GitHub
+
+El workflow **es válido** (`actionlint v1.7.12` pasa sin avisos y la CI ejecuta ahora ese mismo `actionlint`). Pero en GitHub los runs mueren **antes de crear cualquier job**, con esta firma: `workflow name` vacío, `workflow path` `BuildFailed`, `workflow state` `deleted`, `conclusion` `startup_failure`, `jobs: 0`, `check runs: 0`, sin runner asignado y sin logs (`/logs` devuelve 404).
+
+La prueba de que no es el repositorio: se subió un workflow mínimo de tres líneas (`.github/workflows/probe.yml`, un job `ubuntu-latest` con un `echo`) y falló **exactamente igual**. Eso descarta YAML, runner, secrets y reusable workflows. La sonda se retiró después.
+
+Es la firma que la comunidad de GitHub reporta en repos **privados** cuando la construcción del workflow se bloquea antes del grafo de jobs. La causa más habitual es la **facturación**: una tarjeta de pago fallida o el límite de gasto de minutos de Actions sin resolver bloquea los runs de todo el repo, aunque `actions/permissions` aparezca como `enabled`. Si el billing está limpio, es un fallo de enrutado del lado de GitHub.
+
+Qué hacer:
+
+1. **Settings → Billing and plans → Payment information**: resolver tarjeta/factura y revisar el límite de gasto de minutos de Actions para repos privados.
+2. Abrir un run fallido y buscar la anotación *"The job was not started because recent account payments have failed or your spending limit needs to be increased"*. Si aparece, es billing.
+3. Si el billing está limpio, **ticket a soporte** con `workflow_id 408761909`, los runs `42130918983`, `42131491506`, `42132130469`, `42132307491` y el hecho de que un workflow mínimo reproduce el fallo. Alternativa de autoservicio: desactivar y volver a activar Actions en **Settings → Actions → General**.
+
+Este repo sí tenía un bug real de workflow, heredado del original: `privileged: true` no es una clave válida dentro de `services:` (las válidas son `credentials`, `env`, `image`, `options`, `ports`, `volumes`), así que su CI nunca llegó a ejecutar. Corregido a `options: --tls=false --privileged`, y la CI ahora ejecuta `actionlint` para que un workflow inválido falle en el runner y no se descubra en el primer push real.
+
 ## Progreso del pipeline y medios locales
 
 La API persiste `progress.stage`, `progress.message` y `progress.percent` en cada trabajo. Los workers Colab actualizan esos datos con un endpoint protegido por el token del worker y su lease, y envían una señal de presencia mientras esperan o trabajan. El dashboard consulta trabajos y sesiones cada 10 segundos y muestra el estado, la etapa y el trabajo activo de cada worker. Una investigación completada genera automáticamente un trabajo separado de render. La app local controla la cola y el estado, pero no puede iniciar una sesión gratuita de Colab: cada notebook debe abrirse y ejecutarse una vez, y reiniciarse si Colab la desconecta.

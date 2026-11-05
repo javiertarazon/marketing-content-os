@@ -1102,6 +1102,10 @@
     {
       "comando": "git fsck",
       "resultado": "14 commits, sin objetos corruptos"
+    },
+    {
+      "comando": "actionlint v1.7.12 .github/workflows/notebook-ci.yml",
+      "resultado": "0 problemas (schema de GitHub Actions)"
     }
   ],
   "open_decisions": [
@@ -1227,6 +1231,58 @@
         "mitigacion": "Implementado en el adaptador; documentado en el README.",
         "estado": "resuelto"
       }
+    ]
+  },
+  "ci_estado": {
+    "estado": "bloqueada por el lado de GitHub, no por el repositorio",
+    "workflow": ".github/workflows/notebook-ci.yml (id 408761909)",
+    "firma_de_los_runs": {
+      "workflow_name": "(vacio)",
+      "workflow_path": "BuildFailed",
+      "workflow_state": "deleted",
+      "conclusion": "startup_failure",
+      "jobs": 0,
+      "check_runs": 0,
+      "runner_asignado": "ninguno",
+      "logs": "404 (no existen)"
+    },
+    "runs_observados": [
+      {
+        "id": "42130918983",
+        "sha": "b941c19",
+        "conclusion": "failure"
+      },
+      {
+        "id": "42131491506",
+        "sha": "b33e48",
+        "conclusion": "startup_failure"
+      },
+      {
+        "id": "42132130469",
+        "sha": "c3c1631",
+        "conclusion": "startup_failure"
+      },
+      {
+        "id": "42132307491",
+        "sha": "6d0a810",
+        "conclusion": "startup_failure"
+      }
+    ],
+    "prueba_descartante": "Se subio un workflow minimo de tres lineas (.github/workflows/probe.yml: un job ubuntu-latest con un echo) y fallo con la MISMA firma. Eso descarta YAML, runner, secrets, reusable workflows y el propio contenido del fichero: el fallo ocurre en GitHub antes de construir el grafo de jobs. La sonda se retiro despues.",
+    "bug_real_encontrado_y_corregido": "'privileged: true' no es una clave valida dentro de 'services:' de GitHub Actions (las validas son credentials, env, image, options, ports y volumes). Venia del workflow original del repo, por lo que su CI nunca llego a ejecutar. Corregido a 'options: --tls=false --privileged' y validado con actionlint.",
+    "validacion_del_fichero": "actionlint v1.7.12 (schema de GitHub Actions) pasa sin avisos, y el script Python del paso 'Validate notebooks compile' sigue siendo Python valido tras la desindentacion del bloque 'run: |'. La CI incluye ahora un paso que ejecuta actionlint, para que un workflow invalido falle en el runner y no se descubra en el primer push real.",
+    "causa_probable": "Segun los reportes de la comunidad para repos privados, esta firma (BuildFailed + startup_failure + 0 jobs + sin logs) aparece cuando GitHub bloquea la construccion del workflow antes de crear jobs. La causa mas habitual es la FACTURACION: una tarjeta de pago fallida o un limite de gasto de minutos de Actions sin resolver bloquea la construccion de runs en todo el repositorio, aunque actions/permissions aparezca como enabled. Si el billing esta limpio, es un fallo de enrutado del lado de GitHub que requiere ticket.",
+    "accion_requerida_del_usuario": [
+      "Abrir Settings -> Billing and plans -> Payment information y resolver la tarjeta o la factura pendiente; revisar tambien el limite de gasto de minutos de Actions para repos privados.",
+      "Abrir un run fallido y buscar la anotacion 'The job was not started because recent account payments have failed or your spending limit needs to be increased'. Si aparece, es billing y se resuelve solo.",
+      "Si el billing esta limpio, abrir un ticket a soporte de GitHub con: workflow_id 408761909, los run ids 42130918983, 42131491506, 42132130469 y 42132307491, y el hecho de que un workflow minimo de tres lineas reproduce el fallo.",
+      "Alternativa de autoservicio: desactivar y volver a activar Actions en Settings -> Actions -> General del repositorio, que fuerza a GitHub a reconstruir el registro de workflows."
+    ],
+    "referencias": [
+      "https://github.com/orgs/community/discussions/208350",
+      "https://github.com/orgs/community/discussions/208368",
+      "https://github.com/orgs/community/discussions/208822",
+      "https://github.com/orgs/community/discussions/207900"
     ]
   }
 }
