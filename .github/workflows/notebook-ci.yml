@@ -13,13 +13,25 @@ jobs:
     services:
       docker:
         image: docker:24.0-dind
-        privileged: true
-        options: --tls=false
+        # 'privileged' no es una clave valida en 'services': GitHub rechaza el
+        # workflow entero si aparece ahi. ElEquivalent es --privileged dentro
+        # de 'options'.
+        options: --tls=false --privileged
         ports:
           - 2375:2375
     env:
       DOCKER_HOST: tcp://localhost:2375
     steps:
+      - name: Validate workflow files with actionlint
+        # Sin esto, un workflow invalido (por ejemplo una clave no permitida
+        # en 'services') solo se descubre en GitHub, que lo rechaza antes de
+        # crear ningun job.
+        run: |
+          curl -fsSL -o actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          tar xzf actionlint.tar.gz actionlint
+          ./actionlint .github/workflows/*.yml
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
