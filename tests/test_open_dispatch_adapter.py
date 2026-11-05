@@ -455,6 +455,54 @@ def test_publisher_returns_422_for_unsupported_platform(
     assert response.status_code == 422
 
 
+
+
+def test_publisher_surfaces_the_scheduler_detail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Open-Dispatch responde 400 con {"detail": {"errors": [...]}}.
+
+    El publisher debe traducirlo a 502 incluyendo ese detalle: sin el, un
+    rechazo por una ContentUnit invalida seria indescifrable.
+    """
+    publisher = _load_publisher_module()
+    monkeypatch.delenv("PUBLISHER_BACKEND", raising=False)
+    monkeypatch.setenv("OPEN_DISPATCH_BASE_URL", "http://open-dispatch:8000")
+    monkeypatch.setenv("OPEN_DISPATCH_API_TOKEN", "test-token")
+    monkeypatch.setenv("STORAGE_PUBLIC_BASE_URL", "https://cdn.example")
+    monkeypatch.setenv("OPEN_DISPATCH_MEDIA_DIR", str(tmp_path))
+
+    async_client = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/dispatch"
+        return httpx.Response(
+            400,
+            json={"detail": {"errors": ["targets must be non-empty"]}},
+        )
+
+    monkeypatch.setattr(
+        publisher.open_dispatch_adapter.httpx,
+        "AsyncClient",
+        lambda **kwargs: async_client(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+    )
+
+    client = TestClient(publisher.app)
+    response = client.post(
+        "/v1/publish",
+        json={
+            "video_url": "https://cdn.example/renders/video.mp4",
+            "title": "Tema",
+            "platforms": ["tiktok"],
+        },
+    )
+
+    assert response.status_code == 502
+    assert "targets must be non-empty" in response.json()["detail"]
+
+
 def test_publisher_healthz_reports_the_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

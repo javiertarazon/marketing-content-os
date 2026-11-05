@@ -62,6 +62,35 @@ def backend() -> str:
     return selected
 
 
+def scheduler_error_detail(exc: httpx.HTTPStatusError) -> str:
+    """Mensaje con el detalle que devuelve el scheduler.
+
+    Open-Dispatch responde 400 con {"detail": {"errors": [...]}} cuando la
+    ContentUnit no valida. Sin surfacing de ese detalle, el unico sintoma
+    seria un HTTP 400 sin explicar por que.
+    """
+    detail = ""
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        raw = payload.get("detail")
+        if isinstance(raw, dict):
+            raw = raw.get("errors") or raw
+        if isinstance(raw, list):
+            detail = "; ".join(str(item) for item in raw)
+        elif raw:
+            detail = str(raw)
+    elif isinstance(payload, str):
+        detail = payload
+    base = (
+        "El scheduler de publicacion rechazo la solicitud con "
+        f"HTTP {exc.response.status_code}"
+    )
+    return f"{base}: {detail}" if detail else base
+
+
 class PublishRequest(BaseModel):
     video_url: HttpUrl
     title: str = Field(min_length=1, max_length=500)
@@ -124,10 +153,7 @@ async def integrations() -> list[dict]:
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "El scheduler de publicacion rechazo la solicitud con "
-                f"HTTP {exc.response.status_code}"
-            ),
+            detail=scheduler_error_detail(exc),
         ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
@@ -160,10 +186,7 @@ async def publish(request: PublishRequest) -> dict:
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "El scheduler de publicacion rechazo la solicitud con "
-                f"HTTP {exc.response.status_code}"
-            ),
+            detail=scheduler_error_detail(exc),
         ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
