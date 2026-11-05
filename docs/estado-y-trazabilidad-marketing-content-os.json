@@ -1,14 +1,14 @@
 {
-  "schema_version": "2.0.0",
-  "generado_en": "2026-11-05T21:42:58+00:00",
-  "generado_por": "Auditoria tecnica + migracion a Mixpost (MCode)",
+  "schema_version": "2.1.0",
+  "generado_en": "2026-11-05T22:56:23+00:00",
+  "generado_por": "Auditoria tecnica + reescritura del publisher sobre Open-Dispatch (MCode)",
   "proposito": "Manifiesto de trazabilidad para agentes: de donde viene el proyecto, que cambios se aplicaron, en que nivel esta cada componente y que falta para que funcione al 100%.",
   "project": {
     "name": "Marketing Content OS",
     "remote": "https://github.com/javiertarazon/marketing-content-os.git",
     "local_path": "D:\\proyectos_javier\\marketing-content-os",
     "branch": "main",
-    "descripcion": "Pipeline de contenido para redes: investigacion con scraping + LLM, guion, voz clonada, render de video y publicacion. API FastAPI + workers de Colab + dashboard Next.js + publisher-service contra Mixpost."
+    "descripcion": "Pipeline de contenido para redes: investigacion con scraping + LLM, guion, voz clonada, render de video y publicacion. API FastAPI + workers de Colab + dashboard Next.js + publisher-service contra Open-Dispatch (MIT), que encola en TikTok, Instagram y YouTube."
   },
   "project_origin": {
     "situacion_inicial": "El working tree estaba VACIO: no existia ni un archivo de aplicacion. El directorio solo conservaba .git/objects (sin HEAD, config ni refs), un .venv con layout de Linux, apps/dashboard/node_modules con una sola entrada y los clones de third_party.",
@@ -121,8 +121,8 @@
     },
     "apps/publisher-service": {
       "nivel": "funcional_condicionado",
-      "estado": "Habla la API REST real de Mixpost. Requiere Mixpost Pro o Cloud: la edicion Lite no incluye la API.",
-      "verificado": "5 tests propios; contrato verificado contra el OpenAPI oficial de Mixpost."
+      "estado": "Publica contra Open-Dispatch (MIT). El contrato esta verificado contra el codigo upstream y el flujo completo funciona por HTTP, pero la publicacion REAL depende de las credenciales OAuth de TikTok, Instagram y YouTube, que siguen vacias en el .env (las aprobaciones de Meta y TikTok tardan dias o semanas; YouTube es inmediato).",
+      "verificado": "16 tests propios (tests/test_open_dispatch_adapter.py) y scripts/smoke_publisher.py, que levanta un Open-Dispatch simulado y comprueba dispatch, autenticacion, guardas y /v1/integrations."
     },
     "apps/dashboard": {
       "nivel": "funcional",
@@ -136,8 +136,8 @@
     },
     "infra/docker": {
       "nivel": "funcional",
-      "estado": "Los dos compose validan. El de dev levanta Postgres, MinIO, API y dashboard; el de infra añade Mixpost, publisher y tunel de Colab.",
-      "verificado": "docker compose config OK con los perfiles publisher, scheduler y colab-tunnel."
+      "estado": "Los dos compose validan. El de dev levanta Postgres, MinIO, API y dashboard; el de infra anade el publisher y, segun el perfil, Open-Dispatch ('dispatch') o Mixpost ('scheduler'), mas el tunel de Colab. Publisher y Open-Dispatch comparten el volumen de medios 'open_dispatch_media'.",
+      "verificado": "docker compose config OK con los perfiles publisher, dispatch, scheduler y colab-tunnel."
     },
     "ci": {
       "nivel": "funcional",
@@ -592,6 +592,110 @@
       "fix": "Anadir next.config.mjs con output: 'standalone' y copiar solo .next/standalone.",
       "status": "pendiente",
       "verification": "Analizado por lectura."
+    },
+    {
+      "id": "OD-01",
+      "severity": "P0",
+      "area": "apps/publisher-service",
+      "title": "Mixpost Lite no tiene API REST: el publisher no podia automatizar",
+      "file": "apps/publisher-service/adapters/open_dispatch_adapter.py",
+      "lines": "nuevo",
+      "problem": "La API REST de Mixpost solo existe en Mixpost Pro (299 USD unico) o Cloud. La edicion Lite, que es la gratuita, no expone /workspaces, /accounts ni /posts, y ademas no publica en TikTok, Instagram ni YouTube.",
+      "evidence": "Precios de Mixpost (mixpost.app/pricing): API, MCP y webhooks solo en Pro. OpenAPI oficial: las rutas de publicacion cuelgan de /{workspace}/posts.",
+      "fix": "Reescritura completa del publisher contra Open-Dispatch (MIT), que expone POST /dispatch y cubre TikTok, Instagram y YouTube sin coste.",
+      "status": "aplicado",
+      "verification": "16 tests + smoke end-to-end; ver OD-08."
+    },
+    {
+      "id": "OD-02",
+      "severity": "P0",
+      "area": "apps/publisher-service",
+      "title": "YouTube exige una ruta local RELATIVA: la URL publica no sirve",
+      "file": "apps/publisher-service/adapters/open_dispatch_adapter.py",
+      "lines": "_stage_video",
+      "problem": "El adaptador de YouTube de Open-Dispatch sube el archivo desde disco y valida video_path con resolve_media_path(strict_root=True): rutas absolutas y rutas con '..' se rechazan. Con la URL publica de R2 el Short nunca se publicaria.",
+      "evidence": "open-dispatch/media/paths.py: 'absolute media paths are not allowed' y 'media path escapes the configured media root'. open-dispatch/adapters/youtube.py: 'youtube_short.video_path is required'.",
+      "fix": "El publisher descarga el MP4 al volumen compartido (OPEN_DISPATCH_MEDIA_DIR) y envia la ruta relativa 'renders/<nombre>.mp4'. El compose monta el mismo volumen en el publisher y en open-dispatch con la MISMA ruta (/media).",
+      "status": "aplicado",
+      "verification": "test_dispatch_stages_the_video_in_the_shared_media_volume"
+    },
+    {
+      "id": "OD-03",
+      "severity": "P1",
+      "area": "apps/publisher-service",
+      "title": "TikTok e Instagram necesitan URL publica: se valida el origen",
+      "file": "apps/publisher-service/adapters/open_dispatch_adapter.py",
+      "lines": "_validate_public_video_url",
+      "problem": "Ambas redes descargan el video ellas mismas desde una URL publica. Aceptar cualquier URL convertiria el publisher en un proxy para destinos internos.",
+      "evidence": "adapters/tiktok.py: source PULL_FROM_URL con video_url. adapters/instagram.py: 'Instagram Graph requires media to be at a public URL'.",
+      "fix": "El video_url debe ser HTTPS y del host de STORAGE_PUBLIC_BASE_URL, con la misma comprobacion de esquema, puerto y credenciales embebidas que ya usaba el adaptador de Mixpost. Se valida ANTES de cualquier peticion saliente.",
+      "status": "aplicado",
+      "verification": "test_dispatch_rejects_video_outside_configured_storage_host y comprobacion equivalente en el smoke end-to-end (no se genera trafico hacia el scheduler)."
+    },
+    {
+      "id": "OD-04",
+      "severity": "P2",
+      "area": "apps/publisher-service",
+      "title": "Open-Dispatch no expone un endpoint JSON de canales configurados",
+      "file": "apps/publisher-service/adapters/open_dispatch_adapter.py",
+      "lines": "list_accounts",
+      "problem": "El dashboard de Open-Dispatch muestra las plataformas configuradas por variable de entorno, pero solo en HTML; el unico endpoint JSON es /api/profiles, que solo lista perfiles. GET /v1/integrations se quedaria sin datos.",
+      "evidence": "open-dispatch/api/app.py: _platforms_configured() se usa en las plantillas HTML; la unica ruta JSON es GET /api/profiles.",
+      "fix": "list_accounts() combina las variables de entorno (mismo criterio y mismos nombres que usa Open-Dispatch) con los perfiles de GET /api/profiles. La segunda fuente es best-effort: si falla, no rompe el endpoint.",
+      "status": "aplicado",
+      "verification": "test_list_accounts_returns_only_configured_platforms y test_list_accounts_includes_platforms_configured_in_profiles"
+    },
+    {
+      "id": "OD-05",
+      "severity": "P1",
+      "area": "apps/publisher-service",
+      "title": "Cambio de contrato en POST /v1/publish",
+      "file": "apps/publisher-service/main.py",
+      "lines": "PublishRequest",
+      "problem": "El contrato de Mixpost exigia 'integration_id' (id numerico de cuenta) y un unico 'platform'. Open-Dispatch enruta por lista de destinos: 'platforms' admite tiktok, instagram y youtube, opcionalmente 'plataforma:cuenta'.",
+      "evidence": "open-dispatch/api/app.py::dispatch: un ContentUnit con targets[], uno por destino, y una fila de cola por target.",
+      "fix": "PublishRequest acepta 'platforms' (lista) y conserva 'platform' como alias de compatibilidad y 'integration_id' para el backend de Mixpost, que sigue disponible con PUBLISHER_BACKEND=mixpost.",
+      "status": "aplicado",
+      "verification": "test_publisher_publishes_to_open_dispatch_by_default y test_publisher_returns_422_for_unsupported_platform"
+    },
+    {
+      "id": "OD-06",
+      "severity": "P2",
+      "area": "infra/docker",
+      "title": "Perfiles de compose separados: 'dispatch' (Open-Dispatch) y 'scheduler' (Mixpost)",
+      "file": "infra/docker-compose.yml",
+      "lines": "profiles",
+      "problem": "Con el perfil 'publisher' se levantaba tambien el stack de Mixpost, que exige APP_KEY y contrasenas de MySQL. Con Open-Dispatch como scheduler elected, eso es arrastrar un servicio que no se usa.",
+      "evidence": "docker compose config: mixpost exige MIXPOST_APP_KEY y MIXPOST_DB_PASSWORD.",
+      "fix": "mixpost pasa al perfil 'scheduler' y Open-Dispatch usa el perfil 'dispatch'. El publisher se arranca con --profile publisher --profile dispatch.",
+      "status": "aplicado",
+      "verification": "docker compose config OK con publisher+dispatch y con publisher+scheduler"
+    },
+    {
+      "id": "OD-07",
+      "severity": "P2",
+      "area": "infra/docker",
+      "title": "Open-Dispatch no publica imagen Docker: se construye desde el repositorio",
+      "file": "infra/docker-compose.yml",
+      "lines": "open-dispatch",
+      "problem": "El proyecto upstream no publica imagen en Docker Hub ni en GHCR (su CI solo prueba y construye el wheel), asi que no hay una imagen oficial que usar.",
+      "evidence": "open-dispatch/.github/workflows/ci.yml: jobs de test y wheel, sin push de imagen.",
+      "fix": "Se construye desde el repositorio oficial fijado a un commit concreto (773dd54d4cec24a5995d8c722e9f02545cfba013) para que el despliegue sea reproducible: build.context acepta una URL de git en Compose.",
+      "status": "aplicado",
+      "verification": "docker compose config OK; el build requiere salida a internet la primera vez"
+    },
+    {
+      "id": "OD-08",
+      "severity": "P1",
+      "area": "tests",
+      "title": "Smoke test end-to-end del publisher contra un Open-Dispatch simulado",
+      "file": "scripts/smoke_publisher.py",
+      "lines": "nuevo",
+      "problem": "Los tests unitarios con MockTransport no comprueban el camino HTTP real: cabeceras, codigos de estado, cuerpo JSON y el efecto de las guardas.",
+      "evidence": "El script levanta un scheduler falso y el publisher con uvicorn reales.",
+      "fix": "scripts/smoke_publisher.py comprueba la autenticacion Bearer, la forma de la ContentUnit, el rechazo 422 de una URL ajena al almacenamiento SIN generar trafico, el rechazo de plataforma no soportada y GET /v1/integrations.",
+      "status": "aplicado",
+      "verification": "SMOKE OK: publisher <-> Open-Dispatch"
     }
   ],
   "files_changed": [
@@ -608,7 +712,7 @@
       "path": "README.md"
     },
     {
-      "status": "M",
+      "status": "A",
       "path": "apps/api/Dockerfile"
     },
     {
@@ -616,7 +720,7 @@
       "path": "apps/api/main.py"
     },
     {
-      "status": "M",
+      "status": "A",
       "path": "apps/api/requirements.txt"
     },
     {
@@ -636,7 +740,11 @@
       "path": "apps/publisher-service/adapters/mixpost_adapter.py"
     },
     {
-      "status": "D",
+      "status": "A",
+      "path": "apps/publisher-service/adapters/open_dispatch_adapter.py"
+    },
+    {
+      "status": "M",
       "path": "apps/publisher-service/adapters/postiz_adapter.py"
     },
     {
@@ -646,6 +754,18 @@
     {
       "status": "M",
       "path": "docker-compose.dev.yml"
+    },
+    {
+      "status": "A",
+      "path": "docs/auditoria-2026-11.md"
+    },
+    {
+      "status": "M",
+      "path": "docs/estado-y-trazabilidad-marketing-content-os.json"
+    },
+    {
+      "status": "A",
+      "path": "docs/opciones-publicacion-gratuita.md"
     },
     {
       "status": "M",
@@ -669,10 +789,14 @@
     },
     {
       "status": "A",
+      "path": "scripts/smoke_publisher.py"
+    },
+    {
+      "status": "A",
       "path": "tests/conftest.py"
     },
     {
-      "status": "M",
+      "status": "A",
       "path": "tests/test_media_assets.py"
     },
     {
@@ -680,98 +804,126 @@
       "path": "tests/test_mixpost_adapter.py"
     },
     {
-      "status": "D",
+      "status": "A",
+      "path": "tests/test_open_dispatch_adapter.py"
+    },
+    {
+      "status": "M",
       "path": "tests/test_postiz_adapter.py"
     }
   ],
   "diffstat": {
     ".env.example": {
-      "added": "53",
-      "removed": "32"
+      "added": 77,
+      "removed": 32
     },
     ".github/workflows/notebook-ci.yml": {
-      "added": "62",
-      "removed": "25"
+      "added": 62,
+      "removed": 25
     },
     "README.md": {
-      "added": "27",
-      "removed": "3"
+      "added": 27,
+      "removed": 3
     },
     "apps/api/Dockerfile": {
-      "added": "1",
-      "removed": "0"
+      "added": 1,
+      "removed": 0
     },
     "apps/api/main.py": {
-      "added": "44",
-      "removed": "46"
+      "added": 44,
+      "removed": 46
     },
     "apps/api/requirements.txt": {
-      "added": "1",
-      "removed": "0"
+      "added": 1,
+      "removed": 0
     },
     "apps/api/settings.py": {
-      "added": "18",
-      "removed": "7"
+      "added": 18,
+      "removed": 7
     },
     "apps/dashboard/Dockerfile": {
-      "added": "1",
-      "removed": "1"
+      "added": 3,
+      "removed": 1
     },
     "apps/dashboard/app/page.tsx": {
-      "added": "2",
-      "removed": "2"
+      "added": 13,
+      "removed": 3
     },
     "apps/publisher-service/adapters/mixpost_adapter.py": {
-      "added": "316",
-      "removed": "0"
+      "added": 316,
+      "removed": 0
+    },
+    "apps/publisher-service/adapters/open_dispatch_adapter.py": {
+      "added": 503,
+      "removed": 0
     },
     "apps/publisher-service/adapters/postiz_adapter.py": {
-      "added": "0",
-      "removed": "168"
+      "added": 0,
+      "removed": 168
     },
     "apps/publisher-service/main.py": {
-      "added": "14",
-      "removed": "7"
+      "added": 101,
+      "removed": 12
     },
     "docker-compose.dev.yml": {
-      "added": "54",
-      "removed": "15"
+      "added": 54,
+      "removed": 15
+    },
+    "docs/auditoria-2026-11.md": {
+      "added": 111,
+      "removed": 0
+    },
+    "docs/estado-y-trazabilidad-marketing-content-os.json": {
+      "added": 851,
+      "removed": 542
+    },
+    "docs/opciones-publicacion-gratuita.md": {
+      "added": 140,
+      "removed": 0
     },
     "infra/.env.production.example": {
-      "added": "25",
-      "removed": "11"
+      "added": 40,
+      "removed": 11
     },
     "infra/docker-compose.yml": {
-      "added": "13",
-      "removed": "4"
+      "added": 80,
+      "removed": 1
     },
     "notebooks/01_research_scrapegraph.ipynb": {
-      "added": "24",
-      "removed": "7"
+      "added": 24,
+      "removed": 7
     },
     "notebooks/02_render_remotion.ipynb": {
-      "added": "21",
-      "removed": "3"
+      "added": 21,
+      "removed": 3
     },
     "scripts/smoke_local_pipeline.py": {
-      "added": "23",
-      "removed": "17"
+      "added": 23,
+      "removed": 17
+    },
+    "scripts/smoke_publisher.py": {
+      "added": 272,
+      "removed": 0
     },
     "tests/conftest.py": {
-      "added": "24",
-      "removed": "0"
+      "added": 24,
+      "removed": 0
     },
     "tests/test_media_assets.py": {
-      "added": "4",
-      "removed": "0"
+      "added": 4,
+      "removed": 0
     },
     "tests/test_mixpost_adapter.py": {
-      "added": "212",
-      "removed": "0"
+      "added": 212,
+      "removed": 0
+    },
+    "tests/test_open_dispatch_adapter.py": {
+      "added": 468,
+      "removed": 0
     },
     "tests/test_postiz_adapter.py": {
-      "added": "0",
-      "removed": "102"
+      "added": 0,
+      "removed": 102
     }
   },
   "configuration": {
@@ -836,29 +988,59 @@
     ],
     "para_publicar": [
       {
-        "variable": "MIXPOST_BASE_URL",
-        "servicio": "Mixpost",
-        "nota": "Base de la API REST; Lite la sirve en /mixpost/api"
+        "variable": "OPEN_DISPATCH_BASE_URL",
+        "servicio": "Open-Dispatch",
+        "nota": "Base de la API. Docker la sobrescribe a http://open-dispatch:8000; en local, http://localhost:8010"
       },
       {
-        "variable": "MIXPOST_API_KEY",
-        "servicio": "Mixpost",
-        "nota": "CLAVE PERSONAL de la pagina API del panel. Distinta de MIXPOST_APP_KEY"
+        "variable": "OPEN_DISPATCH_API_TOKEN",
+        "servicio": "Open-Dispatch",
+        "nota": "Token Bearer que exigen /dispatch, /queue y /campaign. El publisher y el contenedor deben usar el mismo"
       },
       {
-        "variable": "MIXPOST_WORKSPACE_UUID",
-        "servicio": "Mixpost",
-        "nota": "Opcional; vacio = se resuelve el primero del token"
+        "variable": "OPEN_DISPATCH_MEDIA_DIR",
+        "servicio": "Open-Dispatch",
+        "nota": "Raiz del volumen de medios compartido. Debe ser IDENTICA en publisher y scheduler (/media en Docker)"
       },
       {
-        "variable": "MIXPOST_TIMEZONE",
-        "servicio": "-",
-        "nota": "Zona IANA para programar (America/Caracas)"
+        "variable": "TIKTOK_ACCESS_TOKEN",
+        "servicio": "TikTok",
+        "nota": "Token de usuario con scope video.publish (Content Posting API v2). Pendiente: vacio"
+      },
+      {
+        "variable": "TIKTOK_PRIVACY_LEVEL",
+        "servicio": "TikTok",
+        "nota": "PUBLIC_TO_EVERYONE | MUTUAL_FOLLOW_FRIENDS | SELF_ONLY"
+      },
+      {
+        "variable": "IG_USER_ID",
+        "servicio": "Instagram",
+        "nota": "ID del usuario de Instagram Professional. Pendiente: vacio"
+      },
+      {
+        "variable": "IG_TOKEN",
+        "servicio": "Instagram",
+        "nota": "Token de Graph API con permiso de publicacion. Pendiente: vacio"
+      },
+      {
+        "variable": "YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET",
+        "servicio": "YouTube",
+        "nota": "OAuth de escritorio con la API de datos de YouTube v3 activada. Pendiente: vacio"
+      },
+      {
+        "variable": "YOUTUBE_REFRESH_TOKEN",
+        "servicio": "YouTube",
+        "nota": "Token de refresco con scope youtube.upload. Pendiente: vacio"
       },
       {
         "variable": "STORAGE_PUBLIC_BASE_URL",
         "servicio": "R2",
         "nota": "Host publico del MISMO bucket; el publisher solo acepta videos de ahi"
+      },
+      {
+        "variable": "MIXPOST_BASE_URL / MIXPOST_API_KEY",
+        "servicio": "Mixpost (alternativa)",
+        "nota": "Solo con PUBLISHER_BACKEND=mixpost y una edicion con API (Pro o Cloud)"
       }
     ],
     "dashboard_build_time": [
@@ -867,8 +1049,12 @@
         "nota": "URL de la API para el navegador; se hornea en el bundle"
       },
       {
+        "variable": "NEXT_PUBLIC_OPEN_DISPATCH_URL",
+        "nota": "URL del panel de Open-Dispatch; se hornea en el bundle"
+      },
+      {
         "variable": "NEXT_PUBLIC_MIXPOST_URL",
-        "nota": "URL de la UI de Mixpost; se hornea en el bundle"
+        "nota": "URL de la UI de Mixpost (scheduler alternativo); se hornea en el bundle"
       }
     ],
     "declaradas_pero_no_leidas_por_el_codigo": [
@@ -879,7 +1065,11 @@
   "verification": [
     {
       "comando": ".venv\\Scripts\\python -m pytest -q",
-      "resultado": "31 passed, 1 warning"
+      "resultado": "47 passed, 2 warnings"
+    },
+    {
+      "comando": ".venv\\Scripts\\python scripts/smoke_publisher.py",
+      "resultado": "SMOKE OK: publisher <-> Open-Dispatch"
     },
     {
       "comando": "import main (con el .env real del repo)",
@@ -894,11 +1084,15 @@
       "resultado": "OK"
     },
     {
-      "comando": "docker compose --env-file .env -f infra/docker-compose.yml config",
-      "resultado": "OK con los perfiles publisher, scheduler y colab-tunnel"
+      "comando": "docker compose --env-file .env -f infra/docker-compose.yml --profile publisher --profile dispatch config",
+      "resultado": "OK"
     },
     {
-      "comando": "pyflakes apps packages scripts tests",
+      "comando": "docker compose --env-file .env -f infra/docker-compose.yml --profile publisher --profile scheduler config",
+      "resultado": "OK (Mixpost sigue siendo alternativa valida)"
+    },
+    {
+      "comando": "pyflakes sobre apps, packages, scripts y tests",
       "resultado": "0 problemas"
     },
     {
@@ -907,7 +1101,7 @@
     },
     {
       "comando": "git fsck",
-      "resultado": "12 commits, 152 blobs, 94 trees recuperados, sin objetos corruptos"
+      "resultado": "14 commits, sin objetos corruptos"
     }
   ],
   "open_decisions": [
@@ -924,35 +1118,101 @@
     },
     {
       "id": "D2",
-      "titulo": "Edicion de Mixpost",
-      "estado": "abierto",
+      "titulo": "Scheduler de publicacion",
+      "estado": "resuelto",
       "impacto": "Lite (gratis) no incluye la API REST: el publisher no puede automatizar. Lite tampoco publica en Instagram, TikTok ni YouTube.",
       "opciones": [
         "Mixpost Pro (USD 299 unico) con API y todas las plataformas",
         "Mixpost Cloud (suscripcion)",
         "Lite y publicar a mano desde la UI (Facebook Pages, X, Mastodon)"
-      ]
+      ],
+      "decision": "Open-Dispatch (MIT). Cubre TikTok, Instagram y YouTube con API propia y sin coste. Mixpost Lite se descarta como scheduler automatico porque su API REST solo existe en Pro (299 USD) o Cloud; el adaptador de Mixpost se conserva como alternativa seleccionable con PUBLISHER_BACKEND=mixpost."
     },
     {
       "id": "D3",
       "titulo": "Postiz o Mixpost",
       "estado": "resuelto",
-      "decision": "Mixpost. El adaptador de Postiz se elimino y se sustituyo por el de Mixpost."
+      "decision": "Open-Dispatch. El adaptador de Postiz se elimino primero y el de Mixpost despues; ambos siguen recuperables desde el historial de git."
     },
     {
       "id": "D4",
       "titulo": "Cuenta de los Spaces de Hugging Face",
       "estado": "abierto",
       "impacto": "El .env apunta a javiertarazon-* mientras deploy_hf_spaces.sh deriva el id del usuario autenticado: divergen al publicar con otra cuenta."
+    },
+    {
+      "id": "D5",
+      "titulo": "Credenciales OAuth de las tres redes",
+      "estado": "abierto",
+      "impacto": "Sin TIKTOK_ACCESS_TOKEN, IG_USER_ID/IG_TOKEN ni el trio de YouTube, Open-Dispatch encola la peticion pero su worker no puede publicar: la fila pasa a 'dead' con el motivo 'missing' del adaptador.",
+      "opciones": [
+        "YouTube ya es inmediato: crear el cliente OAuth y el refresh_token",
+        "Meta (Instagram) y TikTok requieren aprobacion de la app de desarrollador: dias o semanas",
+        "Publicar primero en YouTube y dejar TikTok e Instagram para cuando Meta responda"
+      ]
     }
   ],
   "how_to_continue": [
     "Reconstruir el historial si se pierde: el .git original solo tenia objects/, sin HEAD/config/refs. Se reconstruyo con git init + git branch -f main <sha> + git reset --mixed.",
     "Registrar las credenciales de GitHub: no hay gh CLI ni credential helper con entradas. Usar un PAT con scope repo y ejecutar el push, o instalar gh y ejecutar gh auth login.",
-    "Para publicar automaticamente hace falta una clave personal de Mixpost (pagina API del panel) en MIXPOST_API_KEY y una edicion con API (Pro o Cloud).",
-    "Habilitar el acceso publico (r2.dev) del bucket marketing-content-media: sin el, Mixpost no puede descargar el video.",
-    "Ejecutar el smoke test end-to-end: python scripts/smoke_local_pipeline.py con el stack de dev levantado.",
+    "Levantar el scheduler de publicacion: docker compose --env-file .env -f infra/docker-compose.yml --profile publisher --profile dispatch up -d --build.",
+    "Poner las credenciales de las redes en el .env (vacias ahora): TIKTOK_ACCESS_TOKEN, IG_USER_ID e IG_TOKEN, YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET y YOUTUBE_REFRESH_TOKEN.",
+    "Habilitar el acceso publico (r2.dev) del bucket marketing-content-media: sin el, TikTok e Instagram no pueden descargar el video.",
+    "Comprobar el flujo completo sin credenciales: python scripts/smoke_publisher.py.",
+    "Ejecutar el smoke test end-to-end del pipeline: python scripts/smoke_local_pipeline.py con el stack de dev levantado.",
     "Reconstruir el .git de forma permanente: git add -A && git commit -m '...' && git push -u origin main."
   ],
-  "secrets_policy": "El .env contiene credenciales reales y esta en .gitignore (no se versiona). .env.example e infra/.env.production.example solo llevan placeholders."
+  "secrets_policy": "El .env contiene credenciales reales y esta en .gitignore (no se versiona). .env.example e infra/.env.production.example solo llevan placeholders.",
+  "scheduler_open_dispatch": {
+    "proyecto": "https://github.com/Matthew-Selvam/Open-Dispatch",
+    "licencia": "MIT",
+    "commit_verificado": "773dd54d4cec24a5995d8c722e9f02545cfba013",
+    "por_que": "Es el unico candidato MIT que publica en TikTok, Instagram y YouTube a la vez y expone API propia. Postiz es AGPL y exige Temporal; Mixpost Lite no tiene API; postiz-cheap es MIT pero depende de MuAPI, que es de pago.",
+    "api": {
+      "autenticacion": "Authorization: Bearer $OPEN_DISPATCH_API_TOKEN en todas las rutas salvo /healthz",
+      "dispatch": "POST /dispatch -> 202 {\"unit_id\": \"<uuid>\", \"enqueued\": [{\"id\", \"target\", \"scheduled_for\"}]}",
+      "consulta": "GET /queue, GET /campaign/{unit_id}, POST /campaign/{unit_id}/cancel, GET /queue/{row_id}/json, POST /queue/{row_id}/retry",
+      "destinos": "plataforma o plataforma:cuenta (plataforma en [a-z]+, cuenta en [a-z0-9._-]+); maximo 20 por dispatch",
+      "payload": "maximo 100 KB; scheduled_for en ISO-8601; el body es una ContentUnit"
+    },
+    "formatos_por_plataforma": {
+      "tiktok_post": "video_url (URL publica), caption (<=2200), privacy (PUBLIC_TO_EVERYONE | MUTUAL_FOLLOW_FRIENDS | SELF_ONLY)",
+      "instagram_post": "caption (<=2200), video_url (URL publica, se publica como REEL), image_url o carousel_image_urls (2-10)",
+      "youtube_short": "video_path (RUTA RELATIVA sin '..' bajo OPEN_DISPATCH_MEDIA_DIR), title (<=100), description (<=5000), tags, privacy (public | unlisted | private)"
+    },
+    "reglas_criticas": [
+      "TikTok e Instagram descargan el video de una URL publica: hace falta STORAGE_PUBLIC_BASE_URL y el bucket con acceso r2.dev.",
+      "YouTube sube el archivo desde disco: publisher y Open-Dispatch deben compartir volumen con la MISMA ruta.",
+      "Un dispatch puede llevar varias claves de formats a la vez: el worker entrega la misma unidad a cada adaptador."
+    ],
+    "credenciales_por_red": {
+      "tiktok": [
+        "TIKTOK_ACCESS_TOKEN",
+        "TIKTOK_PRIVACY_LEVEL"
+      ],
+      "instagram": [
+        "IG_USER_ID",
+        "IG_TOKEN"
+      ],
+      "youtube": [
+        "YOUTUBE_CLIENT_ID",
+        "YOUTUBE_CLIENT_SECRET",
+        "YOUTUBE_REFRESH_TOKEN"
+      ]
+    },
+    "estado_de_cola": [
+      "queued",
+      "publishing",
+      "published",
+      "failed",
+      "dead",
+      "canceled"
+    ],
+    "servicios_en_el_compose": {
+      "open-dispatch": "API y panel web en el puerto 8010 (perfil 'dispatch')",
+      "open-dispatch-worker": "worker que consume la cola (perfil 'dispatch')",
+      "publisher": "encola las publicaciones y descarga los MP4 al volumen compartido"
+    },
+    "volumen_compartido": "open_dispatch_media montado en /media en los tres servicios"
+  }
 }

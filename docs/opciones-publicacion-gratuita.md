@@ -138,3 +138,19 @@ GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET      # YouTube
 | ¿Por qué descartamos Mixpost Lite? | La API REST va en Pro (USD 299) y Lite sólo publica en FB/X/Mastodon. |
 | ¿Cuál es el coste real? | Tu servidor (~USD 5-15/mes) + **las revisiones de developer app de Meta y TikTok, que pueden tardar semanas**. |
 | ¿Cuánto trabajo de código? | **~0** con Postiz: el adaptador original ya está hecho y sigue en el historial de git. |
+
+---
+
+## 7. Decisión final (5-nov-2026)
+
+**Scheduler elegido: Open-Dispatch (MIT).** Es el único candidato con licencia MIT que publica en TikTok, Instagram y YouTube a la vez y expone API propia.
+
+| Opción | Licencia | API | TikTok + IG + YouTube | Coste | Veredicto |
+|---|---|---|---|---|---|
+| **Open-Dispatch** | MIT | propia (`POST /dispatch`) | ✅ | 0 € | **Elegido** |
+| Postiz self-hosted | AGPL-3.0 | propia | ✅ | 0 € (exige Temporal) | Descartado por licencia |
+| TryPost | AGPL-3.0 | propia | parcial | 0 € | Descartado por licencia y alcance |
+| Mixpost Lite | MIT | ❌ solo en Pro/Cloud | ❌ | 299 € (Pro) | Descartado |
+| postiz-cheap | MIT | propia | ✅ | MuAPI de pago | Descartado |
+
+**Estado de la implementación:** el `publisher-service` ya encola contra la API real de Open-Dispatch (verificado contra su código, commit `773dd54`), con 16 tests propios y un smoke test end-to-end por HTTP. Falta lo externo: las credenciales OAuth de cada red (`TIKTOK_ACCESS_TOKEN`, `IG_USER_ID`/`IG_TOKEN` y el trío de YouTube) y el acceso público `r2.dev` del bucket. Detalle operativo en el README y en `docs/estado-y-trazabilidad-marketing-content-os.json`.

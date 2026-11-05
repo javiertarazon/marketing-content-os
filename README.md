@@ -2,7 +2,7 @@
 
 Plataforma modular para coordinar investigacion, generacion multimedia, renderizado y programacion de publicaciones. El repositorio contiene el orquestador para WSL, plantillas independientes para Hugging Face Spaces y notebooks para workers de Google Colab.
 
-> MVP: API/cola, Spaces privados de voz y guiones, dos notebooks de Colab y programación manual en Mixpost Lite. Requiere configurar cuentas, claves y almacenamiento.
+> MVP: API/cola, Spaces privados de voz y guiones, dos notebooks de Colab y publicación en TikTok, Instagram y YouTube mediante Open-Dispatch (MIT). Requiere configurar cuentas, claves y almacenamiento.
 
 ## Estado real de preparación end-to-end (18-oct-2026)
 
@@ -18,7 +18,7 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 | Scraping → guion → voz con un trabajo del dashboard | Pendiente de prueba real | La búsqueda depende de indexación pública; no acredita métricas virales ni acceso a todas las redes. |
 | Clonación de una voz propia/autorizada | Pendiente | La ruta con muestra WAV y transcripción existe; falta generar y escuchar un resultado con una muestra autorizada. |
 | Render y calidad de MP4 | Pendiente | No hay MP4 final del pipeline inspeccionado en este estado. Resolución/códecs configurados no equivalen a calidad visual validada. |
-| Aprobación y publicación | No automatizadas | El dashboard enlaza Mixpost para carga/programación manual. No guarda aprobación ni dispara publicación al aprobar. El publicador (`publisher-service`) ya habla la API de Mixpost, pero esa API requiere la edición Pro o Cloud: Mixpost Lite no la incluye. |
+| Aprobación y publicación | Publicación automatizada por el scheduler, sin aprobación en el dashboard | El `publisher-service` encola en Open-Dispatch (MIT), que publica en TikTok, Instagram y YouTube; el dashboard sigue sin guardar aprobación ni disparar la publicación al aprobar, y las cuentas OAuth de cada red todavía no están conectadas. Ver «Publicación automática». |
 
 **Siguiente hito aceptable:** una corrida desde el dashboard que quede visible como completa, use voz de catálogo y después voz clonada autorizada, produzca un MP4 reproducible en R2 que se inspeccione visual y auditivamente, y permita una aprobación humana explícita. La publicación seguirá siendo manual hasta integrar y verificar un proveedor y sus cuentas OAuth. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
 
@@ -123,7 +123,39 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
 
 9. Al terminar, detene las celdas de Colab con el boton Stop y apaga el tunel con el comando del paso 2. No apagues Docker mientras haya trabajos activos. Para produccion/migracion, se conserva el mismo API, esquema y almacenamiento S3; se cambia el endpoint temporal por un dominio fijo con HTTPS y se despliegan API y base de datos en el VPS.
 
-Para iniciar Mixpost Lite (edición MIT) junto con sus servicios aislados de MySQL y Redis:
+### Publicación automática: Open-Dispatch (MIT)
+
+El `publisher-service` (`apps/publisher-service`) encola las publicaciones contra **Open-Dispatch** (<https://github.com/Matthew-Selvam/Open-Dispatch>), un scheduler open source con licencia **MIT** que publica en **TikTok, Instagram y YouTube** sin coste y con API propia. Es el scheduler que usa el proyecto.
+
+Se eligió tras comparar licencia, coste y cobertura de plataformas (ver [`docs/opciones-publicacion-gratuita.md`](./docs/opciones-publicacion-gratuita.md)): Mixpost Lite no incluye API REST, Postiz es AGPL y exige Temporal, y `postiz-cheap` depende de MuAPI, que es de pago.
+
+```bash
+# 1) En .env, el token Bearer que exigirá Open-Dispatch (el mismo valor para el
+#    publicador y para el scheduler):
+#    OPEN_DISPATCH_BASE_URL=http://localhost:8010
+#    OPEN_DISPATCH_API_TOKEN=<token largo y aleatorio>
+#    OPEN_DISPATCH_MEDIA_DIR=/media
+# 2) Credenciales de cada red (las lee el worker de Open-Dispatch):
+#    TIKTOK_ACCESS_TOKEN=...   IG_USER_ID=...   IG_TOKEN=...
+#    YOUTUBE_CLIENT_ID=...   YOUTUBE_CLIENT_SECRET=...   YOUTUBE_REFRESH_TOKEN=...
+# 3) Levanta Open-Dispatch, su worker y el publicador:
+docker compose --profile publisher --profile dispatch --env-file .env -f infra/docker-compose.yml up -d --build
+```
+
+El panel de Open-Dispatch queda en `http://localhost:8010` y su cola muestra el estado de cada publicación (`queued`, `publishing`, `published`, `failed`, `dead`, `canceled`).
+
+**Contrato que usa el publicador** (verificado contra el código de Open-Dispatch, commit `773dd54`):
+
+- `POST /dispatch` responde `202` con `unit_id` y `enqueued`. Autenticación: `Authorization: Bearer $OPEN_DISPATCH_API_TOKEN`.
+- TikTok e Instagram (`tiktok_post`, `instagram_post`) descargan el vídeo de una **URL pública**: por eso `STORAGE_PUBLIC_BASE_URL` debe apuntar al host público del mismo bucket R2.
+- YouTube (`youtube_short`) sube el archivo **desde disco**: `video_path` debe ser una ruta relativa sin `..` bajo `OPEN_DISPATCH_MEDIA_DIR`. El publicador descarga el MP4 al volumen `open_dispatch_media` (montado en `/media` en los tres servicios) y envía esa ruta.
+- Un solo dispatch puede llevar varias redes: `platforms: ["tiktok", "instagram", "youtube"]`, o `plataforma:cuenta`.
+
+El publicador solo acepta vídeos HTTPS del host de `STORAGE_PUBLIC_BASE_URL`; cualquier otra URL se rechaza con 422 **antes** de generar tráfico. `GET /v1/integrations` devuelve las plataformas publicables con la configuración actual.
+
+### Mixpost queda como scheduler alternativo
+
+El adaptador de Mixpost sigue en el repo y se activa con `PUBLISHER_BACKEND=mixpost`, pero **su API REST solo existe en Mixpost Pro (pago único de USD 299) o en Mixpost Cloud**: la edición Lite (MIT, gratuita) no la incluye, ni MCP, ni webhooks, según <https://mixpost.app/pricing>. Para levantarlo junto con sus servicios aislados de MySQL y Redis:
 
 ```bash
 docker compose --profile scheduler --env-file .env -f infra/docker-compose.yml up -d mixpost
@@ -155,7 +187,7 @@ Con Lite, la vía soportada es la que ya describe este README: descarga el MP4 d
 docker compose --profile publisher --env-file .env -f infra/docker-compose.yml up -d mixpost publisher
 ```
 
-El publicador usa la API real de Mixpost (`GET /workspaces`, `GET /{workspace}/accounts`, `POST /{workspace}/media`, `POST /{workspace}/posts`), **no** la API de Postiz: Mixpost tiene su propio contrato (`accounts` + `versions`, medios referenciados por id numérico, `Authorization: Bearer <clave>`). `MIXPOST_APP_KEY` es la clave de cifrado de Laravel y sólo la usa el contenedor de Mixpost; la credencial del publicador es `MIXPOST_API_KEY`.
+El publicador usa la API real de Mixpost (`GET /workspaces`, `GET /{workspace}/accounts`, `POST /{workspace}/media`, `POST /{workspace}/posts`), **no** la API de Postiz: Mixpost tiene su propio contrato (`accounts` + `versions`, medios referenciados por id numérico, `Authorization: Bearer <clave>`). `MIXPOST_APP_KEY` es la clave de cifrado de Laravel y sólo la usa el contenedor de Mixpost; la credencial del publicador es `MIXPOST_API_KEY`. Con Lite, la vía soportada es la que ya describe este README: descarga el MP4 del dashboard y prográmalo a mano en la UI.
 
 Mixpost Lite sirve la API y la UI bajo el prefijo `/mixpost` (`MIXPOST_CORE_PATH`), por eso las URLs terminan en `/mixpost/api`.
 
@@ -167,7 +199,7 @@ El dashboard permite seleccionar una carpeta desde el navegador e importar WAV, 
 
 Para habilitar la biblioteca local, completa `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY` en `.env`, con permisos de lectura/escritura de objetos en el bucket. En Colab repite esas cuatro variables en Secrets. La API está ligada a `127.0.0.1`; el worker gateway no expone la biblioteca ni los endpoints del dashboard. Las operaciones de clonación deben usar una voz propia o con autorización; el formulario solicita la transcripción exacta y una confirmación.
 
-Para apagar los servicios locales: `docker compose --profile scheduler --env-file .env -f infra/docker-compose.yml down`. Los datos de PostgreSQL y Mixpost se mantienen en volúmenes Docker.
+Para apagar los servicios locales: `docker compose --profile dispatch --profile scheduler --env-file .env -f infra/docker-compose.yml down`. Los datos de PostgreSQL, Open-Dispatch y Mixpost se mantienen en volúmenes Docker.
 
 ## Hugging Face Spaces
 
