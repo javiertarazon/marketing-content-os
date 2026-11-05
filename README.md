@@ -18,7 +18,7 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 | Scraping → guion → voz con un trabajo del dashboard | Pendiente de prueba real | La búsqueda depende de indexación pública; no acredita métricas virales ni acceso a todas las redes. |
 | Clonación de una voz propia/autorizada | Pendiente | La ruta con muestra WAV y transcripción existe; falta generar y escuchar un resultado con una muestra autorizada. |
 | Render y calidad de MP4 | Pendiente | No hay MP4 final del pipeline inspeccionado en este estado. Resolución/códecs configurados no equivalen a calidad visual validada. |
-| Aprobación y publicación | No automatizadas | El dashboard enlaza Mixpost para carga/programación manual. No guarda aprobación ni dispara publicación al aprobar. Postiz no está conectado al flujo. |
+| Aprobación y publicación | No automatizadas | El dashboard enlaza Mixpost para carga/programación manual. No guarda aprobación ni dispara publicación al aprobar. El publicador (`publisher-service`) ya habla la API de Mixpost, pero esa API requiere la edición Pro o Cloud: Mixpost Lite no la incluye. |
 
 **Siguiente hito aceptable:** una corrida desde el dashboard que quede visible como completa, use voz de catálogo y después voz clonada autorizada, produzca un MP4 reproducible en R2 que se inspeccione visual y auditivamente, y permita una aprobación humana explícita. La publicación seguirá siendo manual hasta integrar y verificar un proveedor y sus cuentas OAuth. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
 
@@ -129,11 +129,35 @@ Para iniciar Mixpost Lite (edición MIT) junto con sus servicios aislados de MyS
 docker compose --profile scheduler --env-file .env -f infra/docker-compose.yml up -d mixpost
 ```
 
-Abre `http://localhost:3002` para completar la configuración inicial de Mixpost. El dashboard permite abrir Mixpost y descargar el MP4 renderizado para subirlo manualmente y programarlo. No hay publicación automática ni integración de API entre las aplicaciones. La imagen `inovector/mixpost:latest` y MySQL necesitan descargarse la primera vez.
+Abre `http://localhost:3002/mixpost` para completar la configuración inicial de Mixpost. El dashboard permite abrir Mixpost y descargar el MP4 renderizado para subirlo manualmente y programarlo. La imagen `inovector/mixpost:latest` y MySQL necesitan descargarse la primera vez.
 
 **El Mixpost local solo sirve para evaluar la interfaz.** Las conexiones OAuth de redes sociales normalmente necesitan una URL pública HTTPS, un dominio estable y credenciales de desarrollador aprobadas por cada plataforma. Configura `MIXPOST_URL` y `MIXPOST_DOMAIN` con ese dominio antes de conectar cuentas; no expongas la instancia local directamente a Internet.
 
-El adaptador Postiz anterior se conserva en el repositorio, pero ya no forma parte del Compose ni del flujo del dashboard; la programación de este MVP se realiza manualmente en Mixpost.
+### Publicación automática: qué edición de Mixpost necesitas
+
+El `publisher-service` (`apps/publisher-service`) publica vídeos con la API REST de Mixpost. **Esa API sólo existe en Mixpost Pro (pago único de USD 299) y en Mixpost Cloud**; la edición **Lite (MIT, gratuita) no incluye la API**, ni MCP, ni webhooks, según la tabla de features de <https://mixpost.app/pricing>. Lite sí publica en Facebook Pages, X y Mastodon; Instagram, TikTok y YouTube requieren Pro.
+
+| Edición | API REST | Publica en |
+|---|---|---|
+| Lite (gratis) | ❌ | Facebook Pages, X, Mastodon |
+| Pro (USD 299 único) | ✅ | todas las plataformas |
+| Cloud (suscripción) | ✅ | todas las plataformas |
+
+Con Lite, la vía soportada es la que ya describe este README: descarga el MP4 del dashboard y prográmalo a mano en la UI de Mixpost. Con Pro o Cloud, el flujo automático es:
+
+```bash
+# 1) Crear una clave personal en la pagina API del panel de Mixpost (se muestra una sola vez).
+# 2) Ponla en .env:
+#    MIXPOST_BASE_URL=http://localhost:3002/mixpost/api
+#    MIXPOST_API_KEY=<clave personal>
+#    MIXPOST_WORKSPACE_UUID=   # vacio = se resuelve el primero del token
+# 3) Levanta Mixpost y el publicador:
+docker compose --profile publisher --env-file .env -f infra/docker-compose.yml up -d mixpost publisher
+```
+
+El publicador usa la API real de Mixpost (`GET /workspaces`, `GET /{workspace}/accounts`, `POST /{workspace}/media`, `POST /{workspace}/posts`), **no** la API de Postiz: Mixpost tiene su propio contrato (`accounts` + `versions`, medios referenciados por id numérico, `Authorization: Bearer <clave>`). `MIXPOST_APP_KEY` es la clave de cifrado de Laravel y sólo la usa el contenedor de Mixpost; la credencial del publicador es `MIXPOST_API_KEY`.
+
+Mixpost Lite sirve la API y la UI bajo el prefijo `/mixpost` (`MIXPOST_CORE_PATH`), por eso las URLs terminan en `/mixpost/api`.
 
 ## Progreso del pipeline y medios locales
 

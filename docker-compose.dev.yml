@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,11 +7,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-marketing_content}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -25,8 +23,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -35,22 +33,59 @@ services:
       timeout: 5s
       retries: 5
 
+  # Crea el bucket de medios una sola vez. Sin esto, la primera subida falla
+  # con NoSuchBucket.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-content-media}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb --ignore-existing local/$$S3_BUCKET &&
+      echo 'bucket $$S3_BUCKET listo'
+      "
+
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      # El contexto es la raiz del repositorio: el Dockerfile copia
+      # packages/python/core, que vive fuera de apps/api.
+      context: .
+      dockerfile: apps/api/Dockerfile
     env_file:
       - .env
+    environment:
+      # El stack de desarrollo siempre habla con MinIO. Los valores S3_* del
+      # .env apuntan a R2 de produccion y se ignoran aqui a proposito.
+      S3_ENDPOINT_URL: ${DEV_S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${DEV_S3_BUCKET:-content-media}
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-content}:${POSTGRES_PASSWORD:-content}@postgres:5432/${POSTGRES_DB:-content}
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - .:/app
-    command: bash -c "uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"
+      # Hot reload sin perder el paquete core copiado en la imagen.
+      - ./apps/api:/app
+      - ./packages/python/core:/app/core
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   dashboard:
     build:
@@ -59,12 +94,16 @@ services:
     env_file:
       - .env
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
-      - .:/app
-    command: bash -c "npm install && npm run dev"
+      - ./apps/dashboard:/app
+      # Volume anonimo para conservar node_modules instalado en la imagen.
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
 
 volumes:
   pgdata:

@@ -49,13 +49,18 @@ def api_request(path: str, *, method: str = "GET", payload: dict | None = None,
         raise RuntimeError(f"No se pudo conectar con {API_BASE_URL}: {error.reason}") from error
 
 
+def resolve(env: dict[str, str], name: str, default: str = "") -> str:
+    """Las variables de entorno del proceso tienen prioridad sobre el .env."""
+    return os.environ.get(name) or env.get(name, default)
+
+
 def clean_test_jobs(parent_id: UUID, env: dict[str, str]) -> None:
     with psycopg.connect(
-        host="127.0.0.1",
-        port=int(env.get("POSTGRES_PORT", "5432")),
-        user=env.get("POSTGRES_USER", "content"),
-        password=env.get("POSTGRES_PASSWORD", ""),
-        dbname=env.get("POSTGRES_DB", "content"),
+        host=resolve(env, "POSTGRES_HOST", "127.0.0.1"),
+        port=int(resolve(env, "POSTGRES_PORT", "5432")),
+        user=resolve(env, "POSTGRES_USER", "content"),
+        password=resolve(env, "POSTGRES_PASSWORD"),
+        dbname=resolve(env, "POSTGRES_DB", "content"),
         connect_timeout=10,
     ) as connection:
         connection.execute("DELETE FROM jobs WHERE parent_job_id = %s", (parent_id,))
@@ -66,7 +71,8 @@ def smoke_private_storage(env: dict[str, str]) -> bool:
     required = (
         "S3_ENDPOINT_URL", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"
     )
-    if any(not env.get(name) for name in required):
+    values = {name: resolve(env, name) for name in required}
+    if any(not values[name] for name in required):
         print("SKIP: R2 no tiene sus cuatro variables S3 configuradas en .env.")
         return False
 
@@ -96,9 +102,9 @@ def smoke_private_storage(env: dict[str, str]) -> bool:
     object_key: str | None = None
     storage = boto3.client(
         "s3",
-        endpoint_url=env["S3_ENDPOINT_URL"],
-        aws_access_key_id=env["S3_ACCESS_KEY_ID"],
-        aws_secret_access_key=env["S3_SECRET_ACCESS_KEY"],
+        endpoint_url=values["S3_ENDPOINT_URL"],
+        aws_access_key_id=values["S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=values["S3_SECRET_ACCESS_KEY"],
         region_name="auto",
     )
     try:
@@ -108,10 +114,10 @@ def smoke_private_storage(env: dict[str, str]) -> bool:
         asset_id = UUID(result["asset_id"])
         object_key = f"assets/image/{asset_id}.png"
         assert "object_key" not in result
-        storage.head_object(Bucket=env["S3_BUCKET"], Key=object_key)
+        storage.head_object(Bucket=values["S3_BUCKET"], Key=object_key)
         signed_url = storage.generate_presigned_url(
             "get_object",
-            Params={"Bucket": env["S3_BUCKET"], "Key": object_key},
+            Params={"Bucket": values["S3_BUCKET"], "Key": object_key},
             ExpiresIn=60,
         )
         with urlopen(signed_url, timeout=30) as response:
@@ -120,14 +126,14 @@ def smoke_private_storage(env: dict[str, str]) -> bool:
         return True
     finally:
         if object_key:
-            storage.delete_object(Bucket=env["S3_BUCKET"], Key=object_key)
+            storage.delete_object(Bucket=values["S3_BUCKET"], Key=object_key)
         if asset_id:
             with psycopg.connect(
-                host="127.0.0.1",
-                port=int(env.get("POSTGRES_PORT", "5432")),
-                user=env.get("POSTGRES_USER", "content"),
-                password=env.get("POSTGRES_PASSWORD", ""),
-                dbname=env.get("POSTGRES_DB", "content"),
+                host=resolve(env, "POSTGRES_HOST", "127.0.0.1"),
+                port=int(resolve(env, "POSTGRES_PORT", "5432")),
+                user=resolve(env, "POSTGRES_USER", "content"),
+                password=resolve(env, "POSTGRES_PASSWORD"),
+                dbname=resolve(env, "POSTGRES_DB", "content"),
                 connect_timeout=10,
             ) as connection:
                 connection.execute("DELETE FROM media_assets WHERE asset_id = %s", (asset_id,))

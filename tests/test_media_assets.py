@@ -81,6 +81,8 @@ def test_upload_asset_stores_metadata_without_exposing_object_key(monkeypatch) -
         ),
     )
     monkeypatch.setenv("S3_BUCKET", "private-assets")
+    # El bucket se resuelve desde Settings, que es la fuente de verdad unica.
+    monkeypatch.setattr(api.settings, "S3_BUCKET", "private-assets")
 
     with TestClient(api.app) as client:
         response = client.post(
@@ -150,6 +152,8 @@ def test_job_media_uses_temporary_signed_url(monkeypatch) -> None:
         ),
     )
     monkeypatch.setenv("S3_BUCKET", "private-assets")
+    # El bucket se resuelve desde Settings, que es la fuente de verdad unica.
+    monkeypatch.setattr(api.settings, "S3_BUCKET", "private-assets")
 
     with TestClient(api.app) as client:
         response = client.get(f"/v1/jobs/{job_id}/media/audio", follow_redirects=False)

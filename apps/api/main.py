@@ -25,12 +25,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from psycopg.rows import dict_row
 # Settings import
-import settings
-
-settings_obj = settings.get_settings()
+from settings import get_settings
 
 settings = get_settings()
-# Override raw env vars with validated settings
+# Los valores validados por Settings son la unica fuente de verdad.
 DATABASE_URL = settings.DATABASE_URL
 WORKER_API_TOKEN = settings.WORKER_API_TOKEN
 JOB_LEASE_SECONDS = settings.JOB_LEASE_SECONDS
@@ -59,11 +57,6 @@ from core.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-WORKER_API_TOKEN = os.environ.get("WORKER_API_TOKEN", "")
-JOB_LEASE_SECONDS = 300
-MAX_JOB_ATTEMPTS = 3
-MAX_ASSET_BYTES = 250 * 1024 * 1024
 
 
 class AssetType(str, Enum):
@@ -91,28 +84,35 @@ def get_connection() -> psycopg.Connection:
 
 
 def get_storage_client():
-    required = (
-        "S3_ENDPOINT_URL",
-        "S3_BUCKET",
-        "S3_ACCESS_KEY_ID",
-        "S3_SECRET_ACCESS_KEY",
-    )
-    missing = [name for name in required if not os.environ.get(name)]
+    required = {
+        "S3_ENDPOINT_URL": settings.S3_ENDPOINT_URL,
+        "S3_BUCKET": settings.S3_BUCKET,
+        "S3_ACCESS_KEY_ID": settings.S3_ACCESS_KEY_ID,
+        "S3_SECRET_ACCESS_KEY": settings.S3_SECRET_ACCESS_KEY,
+    }
+    missing = [name for name, value in required.items() if not value]
     if missing:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Almacenamiento R2/S3 sin configurar: {', '.join(missing)}",
         )
-    if not os.environ["S3_ENDPOINT_URL"].startswith("https://"):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="S3_ENDPOINT_URL debe usar HTTPS para proteger las credenciales",
-        )
+    if not settings.S3_ENDPOINT_URL.startswith("https://"):
+        # HTTP solo se permite contra un servidor local (MinIO en desarrollo).
+        # Fuera de localhost las credenciales traveling en claro son inaceptables.
+        from urllib.parse import urlparse
+
+        endpoint_host = (urlparse(settings.S3_ENDPOINT_URL).hostname or "").lower()
+        local_hosts = {"localhost", "127.0.0.1", "::1", "minio", "0.0.0.0"}
+        if endpoint_host not in local_hosts:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="S3_ENDPOINT_URL debe usar HTTPS para proteger las credenciales",
+            )
     return boto3.client(
         "s3",
-        endpoint_url=os.environ["S3_ENDPOINT_URL"],
-        aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+        endpoint_url=settings.S3_ENDPOINT_URL,
+        aws_access_key_id=settings.S3_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
         region_name="auto",
     )
 
@@ -230,9 +230,7 @@ app = FastAPI(title="Marketing Content OS API", version="1.0.0", lifespan=lifesp
 
 cors_origins = [
     origin.strip()
-    for origin in os.environ.get(
-        "CORS_ORIGINS", "http://localhost:3001,http://localhost:3000"
-    ).split(",")
+    for origin in settings.CORS_ORIGINS.split(",")
     if origin.strip()
 ]
 app.add_middleware(
@@ -454,7 +452,7 @@ def upload_asset(
     try:
         storage.upload_fileobj(
             file.file,
-            os.environ["S3_BUCKET"],
+            settings.S3_BUCKET,
             object_key,
             ExtraArgs={"ContentType": content_type},
         )
@@ -485,7 +483,7 @@ def upload_asset(
             ).fetchone()
     except psycopg.Error as exc:
         try:
-            storage.delete_object(Bucket=os.environ["S3_BUCKET"], Key=object_key)
+            storage.delete_object(Bucket=settings.S3_BUCKET, Key=object_key)
         except (BotoCoreError, ClientError):
             logger.exception("No se pudo limpiar un objeto huérfano de R2/S3")
         raise HTTPException(
@@ -529,7 +527,7 @@ def get_job_media(job_id: UUID, media_type: str) -> RedirectResponse:
     try:
         url = get_storage_client().generate_presigned_url(
             "get_object",
-            Params={"Bucket": os.environ["S3_BUCKET"], "Key": object_key},
+            Params={"Bucket": settings.S3_BUCKET, "Key": object_key},
             ExpiresIn=300,
         )
     except (BotoCoreError, ClientError) as exc:

@@ -1,12 +1,12 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
-from adapters.postiz_adapter import create_post, list_integrations
+from adapters.mixpost_adapter import create_post, list_accounts
 
 app = FastAPI(title="Marketing Content OS Publisher", version="1.0.0")
 app.add_middleware(
@@ -27,7 +27,14 @@ class PublishRequest(BaseModel):
     video_url: HttpUrl
     title: str = Field(min_length=1, max_length=500)
     platform: str = Field(min_length=1, max_length=100)
-    integration_id: str = Field(min_length=1, max_length=200)
+    integration_id: str = Field(
+        min_length=1,
+        max_length=200,
+        description=(
+            "Id de la cuenta de Mixpost (campo `id` de GET /v1/integrations). "
+            "El proveedor se deduce de la cuenta, no de `platform`."
+        ),
+    )
     publish_at: datetime | None = None
     metadata: dict = Field(default_factory=dict)
 
@@ -53,12 +60,12 @@ async def integrations() -> list[dict]:
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Postiz rechazo la solicitud con HTTP {exc.response.status_code}",
+            detail=f"Mixpost rechazo la solicitud con HTTP {exc.response.status_code}",
         ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo conectar con Postiz",
+            detail="No se pudo conectar con Mixpost",
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(
@@ -74,12 +81,12 @@ async def publish(request: PublishRequest) -> dict:
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Postiz rechazo la solicitud con HTTP {exc.response.status_code}",
+            detail=f"Mixpost rechazo la solicitud con HTTP {exc.response.status_code}",
         ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo conectar con Postiz",
+            detail="No se pudo conectar con Mixpost",
         ) from exc
     except ValueError as exc:
         raise HTTPException(

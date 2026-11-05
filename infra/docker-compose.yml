@@ -45,7 +45,7 @@ services:
       context: ../apps/dashboard
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
-        NEXT_PUBLIC_MIXPOST_URL: ${MIXPOST_URL:-http://localhost:3002}
+        NEXT_PUBLIC_MIXPOST_URL: ${NEXT_PUBLIC_MIXPOST_URL:-http://localhost:3002/mixpost}
     ports:
       - "127.0.0.1:3001:3000"
     depends_on:
@@ -58,10 +58,16 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ../.env
+    environment:
+      # Desde la red de Docker el servicio Mixpost se llama por su nombre de
+      # servicio, no por localhost:3002 (que dentro del contenedor es el
+      # propio publisher).
+      MIXPOST_BASE_URL: http://mixpost/mixpost/api
     ports:
       - "127.0.0.1:8001:8001"
     depends_on:
       - api
+      - mixpost
 
   worker-gateway:
     image: nginx:1.27-alpine
@@ -82,13 +88,16 @@ services:
 
   mixpost:
     image: inovector/mixpost:latest
-    profiles: ["scheduler"]
+    profiles: ["scheduler", "publisher"]
     environment:
       APP_NAME: Marketing Content OS
       APP_KEY: ${MIXPOST_APP_KEY:?Define MIXPOST_APP_KEY en .env}
       APP_DEBUG: "false"
       APP_DOMAIN: ${MIXPOST_DOMAIN:-localhost:3002}
       APP_URL: ${MIXPOST_URL:-http://localhost:3002}
+      # Mixpost Lite sirve la API (y la UI) bajo este prefijo:
+      # http://host:3002/mixpost/api/...
+      MIXPOST_CORE_PATH: ${MIXPOST_CORE_PATH:-mixpost}
       DB_HOST: mixpost-mysql
       DB_PORT: 3306
       DB_DATABASE: ${MIXPOST_DB_NAME:-mixpost}
@@ -111,7 +120,7 @@ services:
 
   mixpost-mysql:
     image: mysql/mysql-server:8.0
-    profiles: ["scheduler"]
+    profiles: ["scheduler", "publisher"]
     environment:
       MYSQL_DATABASE: ${MIXPOST_DB_NAME:-mixpost}
       MYSQL_USER: ${MIXPOST_DB_USER:-mixpost}
@@ -127,7 +136,7 @@ services:
 
   mixpost-redis:
     image: redis:7-alpine
-    profiles: ["scheduler"]
+    profiles: ["scheduler", "publisher"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

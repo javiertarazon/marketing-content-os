@@ -10,11 +10,10 @@ inconsistent configuration.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,8 +26,15 @@ class Settings(BaseSettings):
 
     # Core API configuration
     DATABASE_URL: str = Field(..., description="PostgreSQL connection string")
-    API_BASE_URL: str = Field(..., description="Base URL for the FastAPI instance")
+    API_BASE_URL: Optional[str] = Field(
+        default=None,
+        description="Base URL for the FastAPI instance (only required when workers call the API over HTTPS)",
+    )
     WORKER_API_TOKEN: str = Field(..., description="Secret token for worker authentication")
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:3001,http://127.0.0.1:3001,http://localhost:3000",
+        description="Comma separated list of allowed browser origins",
+    )
 
     # Storage (S3 / R2) configuration
     S3_ENDPOINT_URL: str = Field(..., description="Endpoint URL for S3 compatible storage")
@@ -49,15 +55,20 @@ class Settings(BaseSettings):
 
     # Enforce strict env file location and prevent secret leakage
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).parents[3] / ".env",
+        env_file=Path(__file__).parents[2] / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="forbid",
+        # The repository .env is shared by several consumers (postgres, mixpost,
+        # dashboard, workers). Unknown keys must not abort the boot.
+        extra="ignore",
     )
 
     @field_validator("API_BASE_URL")
     @classmethod
-    def ensure_https(cls, v: str) -> str:
+    def ensure_https(cls, v: Optional[str]) -> Optional[str]:
+        # Una variable vacia equivale a "no configurada" (util en .env.example).
+        if v is None or not v.strip():
+            return None
         if not v.startswith("https://"):
             raise ValueError("API_BASE_URL must start with https://")
         return v.rstrip("/")

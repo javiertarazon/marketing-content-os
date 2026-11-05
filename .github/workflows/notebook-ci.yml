@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test-notebooks:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -17,6 +17,8 @@ jobs:
         options: --tls=false
         ports:
           - 2375:2375
+    env:
+      DOCKER_HOST: tcp://localhost:2375
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,40 +42,75 @@ jobs:
           uv pip install -r apps/api/requirements-dev.txt -r packages/python/adapters/requirements.txt
           npm ci --prefix apps/dashboard
 
+      - name: Run pytest suite
+        run: |
+          source .venv/bin/activate
+          pytest -q
+
+      - name: Typecheck and build dashboard
+        run: |
+          npm run --prefix apps/dashboard build
+
+      - name: Validate notebooks compile
+        # Los workers no se pueden ejecutar fuera de Colab: requieren los
+        # Secrets de Colab, un API_BASE_URL publico por HTTPS y los Spaces
+        # privados de Hugging Face. Aqui solo se comprueba que el codigo de
+        # las celdas es Python valido.
+        run: |
+          source .venv/bin/activate
+          python - <<'PY'
+          import json, pathlib, sys
+          failures = []
+          for nb in sorted(pathlib.Path("notebooks").glob("*.ipynb")):
+              data = json.loads(nb.read_text(encoding="utf-8"))
+              source = "\n".join(
+                  "".join(c.get("source", []))
+                  for c in data["cells"] if c.get("cell_type") == "code"
+              )
+              cleaned = "\n".join(
+                  line for line in source.splitlines()
+                  if not line.strip().startswith(("%", "!"))
+              ).replace("await ", "")
+              try:
+                  compile(cleaned, nb.name, "exec")
+              except SyntaxError as exc:
+                  failures.append(f"{nb.name}:{exc.lineno}: {exc.msg}")
+              print(f"{nb.name}: ok")
+          if failures:
+              print("\n".join(failures))
+              sys.exit(1)
+          PY
+
       - name: Start Docker Compose services
         run: |
           cp .env.example .env || true
-          docker compose -f infra/docker-compose.dev.yml up -d
-        env:
-          DOCKER_HOST: tcp://localhost:2375
-
-      - name: Start Cloudflare tunnel (quick tunnel)
-        run: |
-          docker compose -f infra/docker-compose.dev.yml --profile colab-tunnel up -d cloudflared worker-gateway
-        env:
-          DOCKER_HOST: tcp://localhost:2375
+          docker compose -f docker-compose.dev.yml up -d
 
       - name: Wait for API health
         run: |
           for i in {1..30}; do
-            if curl -s http://localhost:8000/healthz > /dev/null; then break; fi
+            if curl -fsS http://localhost:8000/healthz > /dev/null; then
+              echo "API healthy"
+              exit 0
+            fi
             echo "Waiting for API..." && sleep 5
           done
-        env:
-          DOCKER_HOST: tcp://localhost:2375
+          echo "API never became healthy"
+          docker compose -f docker-compose.dev.yml logs api
+          exit 1
 
-      - name: Execute notebooks
+      - name: Smoke test the API and worker protocol
         run: |
           source .venv/bin/activate
-          jupyter nbconvert --to notebook --execute notebooks/01_research_scrapegraph.ipynb --ExecutePreprocessor.timeout=1800
-          jupyter nbconvert --to notebook --execute notebooks/02_render_remotion.ipynb --ExecutePreprocessor.timeout=1800
+          python scripts/smoke_local_pipeline.py
         env:
-          DOCKER_HOST: tcp://localhost:2375
-          API_BASE_URL: "http://localhost:8000"
-          # Export other env vars required by notebooks here, e.g.:
-          # WORKER_API_TOKEN=${{ secrets.WORKER_API_TOKEN }}
-          # S3_ENDPOINT_URL=${{ secrets.S3_ENDPOINT_URL }}
-          # S3_BUCKET=${{ secrets.S3_BUCKET }}
-          # S3_ACCESS_KEY_ID=${{ secrets.S3_ACCESS_KEY_ID }}
-          # S3_SECRET_ACCESS_KEY=${{ secrets.S3_SECRET_ACCESS_KEY }}
-          # HF_TOKEN=${{ secrets.HF_TOKEN }}
+          WORKER_API_TOKEN: ci-worker-token
+          API_BASE_URL: http://localhost:8000
+          # MinIO del stack de dev, alcanzado por el puerto publicado en el host.
+          S3_ENDPOINT_URL: http://127.0.0.1:9000
+          S3_BUCKET: content-media
+          S3_ACCESS_KEY_ID: minioadmin
+          S3_SECRET_ACCESS_KEY: minioadmin
+          POSTGRES_USER: content
+          POSTGRES_PASSWORD: change-this-local-password
+          POSTGRES_DB: content

@@ -57,8 +57,8 @@ type WorkerSession = {
   online: boolean;
 };
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const mixpostUrl = process.env.NEXT_PUBLIC_MIXPOST_URL ?? "http://localhost:3002";
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const mixpostUrl = process.env.NEXT_PUBLIC_MIXPOST_URL || "http://localhost:3002";
 const RESEARCH_PLATFORMS = [
   { value: "youtube", label: "YouTube" },
   { value: "reddit", label: "Reddit" },
