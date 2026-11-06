@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # Permite relanzar la CI a mano desde la pestana Actions, sin
+  # necesidad de un commit de prueba.
+  workflow_dispatch:
 
 jobs:
   test:

@@ -1283,6 +1283,18 @@
       "https://github.com/orgs/community/discussions/208368",
       "https://github.com/orgs/community/discussions/208822",
       "https://github.com/orgs/community/discussions/207900"
-    ]
+    ],
+    "nota_visibilidad": "El repositorio paso a publico el 2026-11-06. El bloqueo anterior (BuildFailed / startup_failure / 0 jobs) se dio en el repo privado, donde la construccion de los workflows esta sujeta al billing de minutos de Actions. Con el repo publico la CI debe construir jobs con normalidad; queda por confirmar con una ejecucion real."
+  },
+  "repository_visibility": {
+    "estado": "publico",
+    "cambio": "2026-11-06, a peticion del usuario",
+    "motivo": "Los repos privados de GitHub sujetan la construccion de los workflows a la facturacion de minutos de Actions: si hay una tarjeta fallida o el limite de gasto sin resolver, GitHub bloquea la creacion de los jobs antes de que exista el grafo, con la firma BuildFailed / startup_failure / 0 jobs. Con el repo publico los minutos de Actions no dependen del billing.",
+    "auditoria_de_secretos_previa": {
+      "metodo": "Se recorrieron los 79 blobs del historial completo y se buscaron (1) los valores reales de los ficheros de credenciales locales, valor a valor, y (2) firmas de credenciales conocidas (AWS/R2, Hugging Face, GitHub, OpenAI, Google, Slack, JWT, claves privadas PEM).",
+      "resultado": "Ningun secreto en el historial: cero firmas de credenciales y cero valores reales de .env. Lo unico expuesto son identificadores no sensibles: las URLs de los Spaces de Hugging Face (que siguen siendo privados), el nombre del bucket de medios y valores de localhost.",
+      "fichero": "referencia: auditoria ejecutada sobre el historial antes del cambio"
+    },
+    "consecuencia": "El codigo del proyecto queda visible para cualquiera. Las credenciales siguen en el .env local, que esta en .gitignore y no se versiona."
   }
 }
