@@ -1234,9 +1234,10 @@
     ]
   },
   "ci_estado": {
-    "estado": "bloqueada por el lado de GitHub, no por el repositorio",
+    "estado": "bloqueada por la cuenta de GitHub, no por el repositorio",
     "workflow": ".github/workflows/notebook-ci.yml (id 408761909)",
     "firma_de_los_runs": {
+      "contexto": "Firma observada mientras el repositorio era privado. Desaparecio al pasarlo a publico.",
       "workflow_name": "(vacio)",
       "workflow_path": "BuildFailed",
       "workflow_state": "deleted",
@@ -1250,33 +1251,45 @@
       {
         "id": "42130918983",
         "sha": "b941c19",
-        "conclusion": "failure"
+        "conclusion": "failure",
+        "visibilidad": "privado"
       },
       {
         "id": "42131491506",
         "sha": "b33e48",
-        "conclusion": "startup_failure"
+        "conclusion": "startup_failure",
+        "visibilidad": "privado"
       },
       {
         "id": "42132130469",
         "sha": "c3c1631",
-        "conclusion": "startup_failure"
+        "conclusion": "startup_failure",
+        "visibilidad": "privado"
       },
       {
         "id": "42132307491",
         "sha": "6d0a810",
-        "conclusion": "startup_failure"
+        "conclusion": "startup_failure",
+        "visibilidad": "privado"
+      },
+      {
+        "id": "42204204757",
+        "sha": "daa5734",
+        "conclusion": "failure",
+        "visibilidad": "publico",
+        "jobs": 1,
+        "check_run": "127846637377",
+        "nota": "Primer run con job real ('test') tras pasarlo a publico. El job se construye pero no arranca: runner_id 0, steps [] y 2 s de duracion. Su anotacion da la causa exacta (cuenta bloqueada por facturacion)."
       }
     ],
     "prueba_descartante": "Se subio un workflow minimo de tres lineas (.github/workflows/probe.yml: un job ubuntu-latest con un echo) y fallo con la MISMA firma. Eso descarta YAML, runner, secrets, reusable workflows y el propio contenido del fichero: el fallo ocurre en GitHub antes de construir el grafo de jobs. La sonda se retiro despues.",
     "bug_real_encontrado_y_corregido": "'privileged: true' no es una clave valida dentro de 'services:' de GitHub Actions (las validas son credentials, env, image, options, ports y volumes). Venia del workflow original del repo, por lo que su CI nunca llego a ejecutar. Corregido a 'options: --tls=false --privileged' y validado con actionlint.",
     "validacion_del_fichero": "actionlint v1.7.12 (schema de GitHub Actions) pasa sin avisos, y el script Python del paso 'Validate notebooks compile' sigue siendo Python valido tras la desindentacion del bloque 'run: |'. La CI incluye ahora un paso que ejecuta actionlint, para que un workflow invalido falle en el runner y no se descubra en el primer push real.",
-    "causa_probable": "Segun los reportes de la comunidad para repos privados, esta firma (BuildFailed + startup_failure + 0 jobs + sin logs) aparece cuando GitHub bloquea la construccion del workflow antes de crear jobs. La causa mas habitual es la FACTURACION: una tarjeta de pago fallida o un limite de gasto de minutos de Actions sin resolver bloquea la construccion de runs en todo el repositorio, aunque actions/permissions aparezca como enabled. Si el billing esta limpio, es un fallo de enrutado del lado de GitHub que requiere ticket.",
     "accion_requerida_del_usuario": [
-      "Abrir Settings -> Billing and plans -> Payment information y resolver la tarjeta o la factura pendiente; revisar tambien el limite de gasto de minutos de Actions para repos privados.",
-      "Abrir un run fallido y buscar la anotacion 'The job was not started because recent account payments have failed or your spending limit needs to be increased'. Si aparece, es billing y se resuelve solo.",
-      "Si el billing esta limpio, abrir un ticket a soporte de GitHub con: workflow_id 408761909, los run ids 42130918983, 42131491506, 42132130469 y 42132307491, y el hecho de que un workflow minimo de tres lineas reproduce el fallo.",
-      "Alternativa de autoservicio: desactivar y volver a activar Actions en Settings -> Actions -> General del repositorio, que fuerza a GitHub a reconstruir el registro de workflows."
+      "Settings -> Billing and plans -> Payment information: pagar la factura pendiente o corregir la tarjeta que fallo. GitHub bloquea la cuenta completa cuando hay saldo impagado.",
+      "Comprobar en https://github.com/settings/billing que la cuenta ya no figura como bloqueada y que no queda ninguna factura vencida.",
+      "En cuanto se regularice, relanzar la CI desde la pestana Actions: el workflow tiene workflow_dispatch para eso, sin necesidad de un commit.",
+      "Si el pago esta al dia y la cuenta sigue bloqueada, abrir un ticket a soporte con la anotacion 'your account is locked due to a billing issue' y el run id 42204204757."
     ],
     "referencias": [
       "https://github.com/orgs/community/discussions/208350",
@@ -1284,7 +1297,14 @@
       "https://github.com/orgs/community/discussions/208822",
       "https://github.com/orgs/community/discussions/207900"
     ],
-    "nota_visibilidad": "El repositorio paso a publico el 2026-11-06. El bloqueo anterior (BuildFailed / startup_failure / 0 jobs) se dio en el repo privado, donde la construccion de los workflows esta sujeta al billing de minutos de Actions. Con el repo publico la CI debe construir jobs con normalidad; queda por confirmar con una ejecucion real."
+    "nota_visibilidad": "El repositorio paso a publico el 6-nov-2026 (auditoria previa del historial: 79 blobs revisados, cero secretos y cero firmas de credenciales). Con el repo publico los minutos de Actions no dependen del billing una vez desbloqueada la cuenta; el bloqueo actual es de la cuenta, no del repositorio.",
+    "causa_confirmada": "Anotacion de GitHub en el check-run 127846637377 del run 42204204757 (06-nov-2026): 'The job was not started because your account is locked due to a billing issue.' El workflow se reconoce y construye el job, pero ningun runner lo arranca: runner_id 0, steps [] y 2 s de duracion.",
+    "secuencia_del_diagnostico": [
+      "Los runs BuildFailed/startup_failure con 0 jobs (repo privado) se reprodujeron con un workflow minimo de tres lineas: eso descarto YAML, runner, secrets y reusable workflows.",
+      "actionlint v1.7.12 paso sin avisos sobre el workflow real, confirmando que el fichero era valido.",
+      "Al pasar el repositorio a publico, GitHub reconocio el workflow ('Notebook CI'), creo el job 'test' y dejo de aparecer la firma BuildFailed: el bloqueo de construccion desaparece, pero el job sigue sin arrancar.",
+      "La anotacion del check-run da la causa exacta: la cuenta esta bloqueada por facturacion. Eso impide ejecutar Actions con independencia de la visibilidad del repositorio."
+    ]
   },
   "repository_visibility": {
     "estado": "publico",

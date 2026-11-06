@@ -194,19 +194,22 @@ El publicador usa la API real de Mixpost (`GET /workspaces`, `GET /{workspace}/a
 Mixpost Lite sirve la API y la UI bajo el prefijo `/mixpost` (`MIXPOST_CORE_PATH`), por eso las URLs terminan en `/mixpost/api`.
 
 
-### La CI no arranca: bloqueo del lado de GitHub
+### La CI no arranca: la cuenta de GitHub está bloqueada por facturación
 
-El workflow **es válido** (`actionlint v1.7.12` pasa sin avisos y la CI ejecuta ahora ese mismo `actionlint`). Pero en GitHub los runs mueren **antes de crear cualquier job**, con esta firma: `workflow name` vacío, `workflow path` `BuildFailed`, `workflow state` `deleted`, `conclusion` `startup_failure`, `jobs: 0`, `check runs: 0`, sin runner asignado y sin logs (`/logs` devuelve 404).
+Este repositorio es **público** desde el 6-nov-2026 (antes de hacerlo se auditó el historial completo: 79 blobs, cero secretos, cero firmas de credenciales). Aun así, la CI no ejecuta ni un paso, y GitHub lo dice explícitamente en la anotación del job:
 
-La prueba de que no es el repositorio: se subió un workflow mínimo de tres líneas (`.github/workflows/probe.yml`, un job `ubuntu-latest` con un `echo`) y falló **exactamente igual**. Eso descarta YAML, runner, secrets y reusable workflows. La sonda se retiró después.
+> **The job was not started because your account is locked due to a billing issue.**
 
-Es la firma que la comunidad de GitHub reporta en repos **privados** cuando la construcción del workflow se bloquea antes del grafo de jobs. La causa más habitual es la **facturación**: una tarjeta de pago fallida o el límite de gasto de minutos de Actions sin resolver bloquea los runs de todo el repo, aunque `actions/permissions` aparezca como `enabled`. Si el billing está limpio, es un fallo de enrutado del lado de GitHub.
+El workflow **es válido** (`actionlint v1.7.12` pasa sin avisos) y **se reconoce y construye el job** (`Notebook CI` → job `test`), pero ningún runner lo arranca: `runner_id: 0`, `steps: []` y 2 s de duración total. Eso no es un problema del repositorio: es la **cuenta bloqueada por saldo impagado**, y arrastra a Actions entero con independencia de la visibilidad del repo.
 
 Qué hacer:
 
-1. **Settings → Billing and plans → Payment information**: resolver tarjeta/factura y revisar el límite de gasto de minutos de Actions para repos privados.
-2. Abrir un run fallido y buscar la anotación *"The job was not started because recent account payments have failed or your spending limit needs to be increased"*. Si aparece, es billing.
-3. Si el billing está limpio, **ticket a soporte** con `workflow_id 408761909`, los runs `42130918983`, `42131491506`, `42132130469`, `42132307491` y el hecho de que un workflow mínimo reproduce el fallo. Alternativa de autoservicio: desactivar y volver a activar Actions en **Settings → Actions → General**.
+1. **Settings → Billing and plans → Payment information**: pagar la factura pendiente o corregir la tarjeta que falló. GitHub bloquea la cuenta completa cuando queda saldo sin pagar.
+2. Comprobar en <https://github.com/settings/billing> que la cuenta ya no figura como bloqueada y que no queda ninguna factura vencida.
+3. En cuanto se regularice, relanzar la CI desde la pestaña **Actions**: el workflow tiene `workflow_dispatch` para eso, sin commits de prueba.
+4. Si el pago está al día y la cuenta sigue bloqueada, ticket a soporte indicando la anotación *«your account is locked due to a billing issue»* y el run `42204204757`.
+
+Cómo se llegó al diagnóstico, por si hay que repetirlo: con el repositorio todavía privado, los runs morían con `workflow name` vacío, `path` `BuildFailed`, `conclusion` `startup_failure`, `jobs: 0` y sin logs. Eso se reprodujo **igual** con un workflow mínimo de tres líneas, lo que descartó YAML, runner, secrets y reusable workflows; `actionlint` confirmó que el fichero era válido. Al pasarlo a público, GitHub pasó a reconocer el workflow y a construir el job, y la anotación del check-run dio la causa exacta.
 
 Este repo sí tenía un bug real de workflow, heredado del original: `privileged: true` no es una clave válida dentro de `services:` (las válidas son `credentials`, `env`, `image`, `options`, `ports`, `volumes`), así que su CI nunca llegó a ejecutar. Corregido a `options: --tls=false --privileged`, y la CI ahora ejecuta `actionlint` para que un workflow inválido falle en el runner y no se descubra en el primer push real.
 
