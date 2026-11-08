@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -56,9 +57,12 @@ from apps.workers.worker_common import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 PROJECT_DIR_NAME = "marketing-content-os-renderer"
+# La coma final es lo que convierte esto en una TUPLA de patrones. Sin ella
+# queda una sola cadena y el bucle de find_media_tool la recorre caracter a
+# caracter, con lo que glob("/") lanza NotImplementedError.
 WINGET_FFMPEG_GLOBS = (
     "Users/*/AppData/Local/Microsoft/WinGet/Packages/"
-    "Gyan.FFmpeg_Microsoft.Winget.Source_*/ffmpeg-*/bin"
+    "Gyan.FFmpeg_Microsoft.Winget.Source_*/ffmpeg-*/bin",
 )
 CHOCO_BIN = Path(r"C:\ProgramData\chocolatey\bin")
 CHROME_CANDIDATES = (
@@ -81,8 +85,9 @@ def find_media_tool(name: str) -> str | None:
     if found:
         return found
     candidates: list[Path] = []
+    system_drive = Path(os.environ.get("SystemDrive", "C:") + "/")
     for pattern in WINGET_FFMPEG_GLOBS:
-        candidates.extend(Path("C:/").glob(pattern))
+        candidates.extend(system_drive.glob(pattern))
     candidates.append(CHOCO_BIN)
     for directory in candidates:
         executable = directory / f"{name}.exe"
