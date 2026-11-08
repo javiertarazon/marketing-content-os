@@ -151,6 +151,12 @@ services:
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REFRESH_TOKEN: ${YOUTUBE_REFRESH_TOKEN:-}
     command: ["python", "-m", "scheduler.worker"]
+    # La imagen de upstream trae un HEALTHCHECK que consulta el puerto 8000, pero
+    # el worker no sirve HTTP (solo consume la cola), asi que el chequeo siempre
+    # falla y Docker lo marca "unhealthy" aunque el proceso este bien. Se
+    # desactiva: la salud real del worker se ve en sus logs.
+    healthcheck:
+      disable: true
     volumes:
       - open_dispatch_data:/data
       - open_dispatch_media:/media

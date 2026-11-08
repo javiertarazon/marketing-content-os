@@ -1110,6 +1110,10 @@
     {
       "comando": "prueba end-to-end real contra la pila Docker (publisher -> Open-Dispatch -> worker)",
       "resultado": "OK: dispatch con unit_id y 3 entradas encoladas, formatos verificados en /campaign, medio descargado al volumen compartido y worker reclamando una unidad vencida con reintento programmed. Detalle en infra_verificacion.prueba_end_to_end_real."
+    },
+    {
+      "comando": "rebuild + recreacion de la pila y prueba end-to-end tras los arreglos E2E-01..E2E-03",
+      "resultado": "OK: API viva con /docs y /openapi.json en 200, dispatch de 3 plataformas encolado, medio descargado al volumen compartido con propietario dispatch:dispatch y borrado por el worker sin root. Suite: 52 tests passed."
     }
   ],
   "open_decisions": [
@@ -1340,8 +1344,9 @@
     "entorno": "Docker Desktop 29.7.2 (linux/amd64) levantado en esta maquina el 6-nov-2026 para la primera construccion y arranque reales.",
     "imagenes_construidas": [
       "infra-publisher:latest (250 MB) - apps/publisher-service/Dockerfile",
-      "infra-api:latest - apps/api/Dockerfile",
-      "infra-dashboard:latest - apps/dashboard/Dockerfile"
+      "infra-api:latest (334 MB) - apps/api/Dockerfile",
+      "infra-dashboard:latest (1.18 GB) - apps/dashboard/Dockerfile",
+      "infra-open-dispatch:latest y infra-open-dispatch-worker:latest (388 MB) - construidas desde https://github.com/Matthew-Selvam/Open-Dispatch.git#773dd54"
     ],
     "nota": "Los contenedores se levantan con: docker compose --env-file .env -f infra/docker-compose.yml --profile publisher --profile dispatch up -d --build. El servicio open-dispatch se construye desde el repositorio oficial fijado al commit 773dd54d4cec24a5995d8c722e9f02545cfba013.",
     "prueba_end_to_end_real": {
@@ -1359,6 +1364,43 @@
       "limpieza": "Objetos de prueba borrados de R2 (bucket a 0 objetos) y fichero de prueba eliminado del volumen de medios. La cola conserva las filas canceladas como historial.",
       "unica_bloqueante_restante": "Las credenciales OAuth de TikTok, Instagram y YouTube siguen vacias en .env. Es el unico punto que impide una publicacion real."
     },
-    "nota_permisos_volumen_compartido": "El contenedor de Open-Dispatch corre como uid 999 (dispatch) y el publisher-service corre como root, porque su Dockerfile no fija USER. El publisher crea los ficheros de /media/renders como root, de modo que el worker puede leerlos (modo 644) pero no borrarlos: la limpieza exige 'docker exec -u root'. No rompe la publicacion, pero conviene alinear la propiedad de los ficheros."
-  }
+    "nota_permisos_volumen_compartido": "El contenedor de Open-Dispatch corre como uid 999 (dispatch) y el publisher-service corre como root, porque su Dockerfile no fija USER. El publisher crea los ficheros de /media/renders como root, de modo que el worker puede leerlos (modo 644) pero no borrarlos: la limpieza exige 'docker exec -u root'. No rompe la publicacion, pero conviene alinear la propiedad de los ficheros.",
+    "estado_tras_arranque": "postgres healthy, open-dispatch healthy, api, dashboard, publisher y open-dispatch-worker Up. Se verifico GET /docs y GET /openapi.json de la API con HTTP 200 y que el contenedor sobrevive mas de 30 s."
+  },
+  "defectos_corregidos_por_ejecucion_real": [
+    {
+      "id": "E2E-01",
+      "severidad": "P0",
+      "area": "apps/api",
+      "titulo": "La API no arrancaba dentro de Docker: IndexError al importar settings",
+      "file": "apps/api/settings.py",
+      "problema": "env_file=Path(__file__).parents[2] / '.env'. En el repositorio settings.py vive en apps/api/ y parents[2] es la raiz, pero en la imagen el fichero esta en /app/ y solo hay dos parents, de modo que la linea lanzaba IndexError: 2 y el contenedor de la API terminaba con codigo 1 al arrancar. La suite local no lo detectaba porque nunca se ejecuto el contenedor.",
+      "fix": "Se extrajo resolve_env_file(): comprueba len(here.parents) >= 3 antes de indexar, usa la variable ENV_FILE si esta definida y, si no hay fichero, devuelve una ruta inexistente que pydantic-settings ignora. En Docker el .env no se copia a la imagen: compose lo inyecta como variables de entorno.",
+      "regresion": "tests/test_api_settings_layout.py: copia settings.py a una ruta superficial equivalente a /app y comprueba que el import no lanza IndexError, mas la comprobacion de que el modulo se importa sin fichero .env.",
+      "status": "aplicado y verificado",
+      "verificacion": "Contenedor infra-api-1 Up, GET /docs -> 200, GET /openapi.json -> 200, y el proceso sigue vivo tras 30 s."
+    },
+    {
+      "id": "E2E-02",
+      "severidad": "P1",
+      "area": "apps/publisher-service",
+      "titulo": "El publisher corria como root y dejaba el volumen de medios con ficheros que el worker no podia borrar",
+      "file": "apps/publisher-service/Dockerfile",
+      "problema": "El Dockerfile no fijaba USER, asi que el contenedor corria como root. Los ficheros que crea en el volumen compartido /media quedaban como root: el worker de Open-Dispatch (uid 999) podia leerlos por el modo 644, pero no borrarlos ni sustituirlos (rm: Permission denied).",
+      "fix": "El Dockerfile crea el usuario dispatch con uid 999, precrea /media con esa propiedad y arranca con USER 999:999, de modo que el volumen compartido tiene el mismo propietario este contenedor lo cree o no. PYTHONDONTWRITEBYTECODE=1 evita intentar escribir .pyc en /app.",
+      "status": "aplicado y verificado",
+      "verificacion": "docker exec infra-publisher-1 id -> uid=999(dispatch). El fichero creado en /media/renders queda como dispatch:dispatch y el worker lo borra sin privileged: 'removed ...mp4'."
+    },
+    {
+      "id": "E2E-03",
+      "severidad": "P2",
+      "area": "infra/docker",
+      "titulo": "El worker aparecia unhealthy de forma falsa",
+      "file": "infra/docker-compose.yml",
+      "problema": "La imagen de Open-Dispatch trae un HEALTHCHECK que consulta el puerto 8000. El contenedor open-dispatch-worker no sirve HTTP (ejecuta python -m scheduler.worker), asi que el chequeo fallaba siempre y Docker lo marcaba unhealthy aunque el proceso funcionase.",
+      "fix": "Se desactiva el healthcheck heredado en el servicio open-dispatch-worker con 'healthcheck: disable: true'. La salud real del worker se comprueba en sus logs.",
+      "status": "aplicado y verificado",
+      "verificacion": "Tras recrear la pila, todos los contenedores aparecen Up o healthy y ninguno en unhealthy."
+    }
+  ]
 }

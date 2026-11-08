@@ -10,11 +10,37 @@ inconsistent configuration.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def resolve_env_file() -> Path:
+    """Localiza el fichero ``.env`` sin romper fuera del layout del repositorio.
+
+    En el repositorio ``settings.py`` vive en ``apps/api/``, asi que la raiz es
+    ``parents[2]``. En la imagen de Docker el fichero esta en ``/app/`` y no
+    hay mas niveles que ``/``: usar ``parents[2]`` ahi lanza ``IndexError`` y el
+    contenedor de la API muere al arrancar.
+
+    En Docker el ``.env`` no se copia a la imagen (los secretos no se hornean):
+    ``docker compose`` lo inyecta como variables de entorno. Por eso, si no hay
+    fichero, se devuelve una ruta inexistente y ``pydantic-settings`` la ignora
+    sin fallar. Se puede forzar con la variable ``ENV_FILE``.
+    """
+    override = os.environ.get("ENV_FILE")
+    if override:
+        return Path(override)
+
+    here = Path(__file__).resolve()
+    if len(here.parents) >= 3:
+        candidate = here.parents[2] / ".env"
+        if candidate.is_file():
+            return candidate
+    return here.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -55,7 +81,7 @@ class Settings(BaseSettings):
 
     # Enforce strict env file location and prevent secret leakage
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).parents[2] / ".env",
+        env_file=resolve_env_file(),
         env_file_encoding="utf-8",
         case_sensitive=False,
         # The repository .env is shared by several consumers (postgres, mixpost,
