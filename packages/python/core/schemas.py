@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
@@ -34,6 +34,11 @@ class JobStatus(str, Enum):
     running = "running"
     succeeded = "succeeded"
     failed = "failed"
+    # El render deja el video listo y espera a que una persona lo apruebe.
+    # Sin esta puerta, el video se publicaba sin revision.
+    awaiting_approval = "awaiting_approval"
+    approved = "approved"
+    rejected = "rejected"
 
 
 class ResearchPlatform(str, Enum):
@@ -129,6 +134,33 @@ class MediaAsset(BaseModel):
 
 class JobCompletion(BaseModel):
     output: dict[str, Any]
+
+
+class JobApproval(BaseModel):
+    """Decision humana sobre un video ya renderizado.
+
+    ``publish`` permite aprobar sin publicar (por ejemplo para revisarlo en
+    otros canales antes). Si no se indica, se publica.
+    """
+
+    publish: bool = True
+    platforms: list[ResearchPlatform] = Field(
+        default_factory=list,
+        max_length=6,
+        description=(
+            "Plataformas destino. Si se deja vacio se usan las del trabajo "
+            "original."
+        ),
+    )
+    note: Optional[str] = Field(
+        default=None, max_length=1000, description="Motivo de la decision"
+    )
+
+
+class JobRejection(BaseModel):
+    reason: Optional[str] = Field(
+        default=None, max_length=1000, description="Motivo del rechazo"
+    )
 
 
 class JobFailure(BaseModel):

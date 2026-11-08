@@ -73,6 +73,20 @@ class Settings(BaseSettings):
     SCRIPT_SPACE_URL: Optional[str] = Field(default=None, description="URL of the script generation Space")
     VOICE_STUDIO_URL: Optional[str] = Field(default=None, description="URL of the voice synthesis Space")
     YOUTUBE_API_KEY: Optional[str] = Field(default=None, description="YouTube Data API key")
+    PUBLISHER_BASE_URL: Optional[str] = Field(
+        default=None,
+        description=(
+            "URL del publisher-service. Si esta definida, al aprobar un video "
+            "la API lo encola en el scheduler configurado."
+        ),
+    )
+    STORAGE_PUBLIC_BASE_URL: Optional[str] = Field(
+        default=None,
+        description=(
+            "Host publico del bucket de medios. Necesario para entregar la URL "
+            "HTTPS del video al scheduler."
+        ),
+    )
 
     # Runtime configuration
     JOB_LEASE_SECONDS: int = Field(default=300, ge=60, description="Lease duration for a job")

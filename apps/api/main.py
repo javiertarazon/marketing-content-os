@@ -3,11 +3,13 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated
 from uuid import UUID, uuid4
 
 import boto3
+import httpx
 import psycopg
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import (
@@ -44,11 +46,13 @@ VOICE_STUDIO_URL = settings.VOICE_STUDIO_URL
 YOUTUBE_API_KEY = settings.YOUTUBE_API_KEY
 
 from core.schemas import (
+    JobApproval,
     JobCompletion,
     JobCreate,
     JobFailure,
     JobProgress,
     JobRecord,
+    JobRejection,
     JobStatus,
     MediaAsset,
     WorkerHeartbeat,
@@ -167,6 +171,19 @@ def init_database() -> None:
         connection.execute(
             "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ"
         )
+        # La puerta de aprobacion humana introduce tres estados nuevos. La
+        # restricion CHECK original limitaba status a cuatro valores, asi que hay
+        # que recrearla: un DROP IF EXISTS evita fallar si no existe todavia.
+        connection.execute("ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_status_check")
+        connection.execute(
+            """
+            ALTER TABLE jobs ADD CONSTRAINT jobs_status_check
+            CHECK (status IN (
+                'queued', 'running', 'succeeded', 'failed',
+                'awaiting_approval', 'approved', 'rejected'
+            ))
+            """
+        )
         connection.execute(
             "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS progress JSONB"
         )
@@ -269,7 +286,9 @@ def serialize_job(row: dict) -> JobRecord:
         progress=row.get("progress") or {
             "stage": row["status"],
             "message": "En cola" if row["status"] == "queued" else "En proceso",
-            "percent": 100 if row["status"] == "succeeded" else 0,
+            "percent": 100
+            if row["status"] in ("succeeded", "approved", "rejected", "awaiting_approval")
+            else 0,
         },
         output=row["output"],
         error=row["error"],
@@ -735,18 +754,36 @@ def complete_job(
         completed_message = (
             "Investigación completada"
             if row["worker"] == WorkerType.research.value
-            else "Renderizado completado"
+            else "Video listo, pendiente de aprobación"
+        )
+        # Un render NO termina como 'succeeded': el video queda a la espera de
+        # que una persona lo revise y lo apruebe. Solo entonces se publica.
+        completed_status = (
+            JobStatus.succeeded.value
+            if row["worker"] == WorkerType.research.value
+            else JobStatus.awaiting_approval.value
+        )
+        completed_stage = (
+            "completed"
+            if row["worker"] == WorkerType.research.value
+            else "awaiting_approval"
         )
         updated = connection.execute(
             """
             UPDATE jobs
-            SET status = 'succeeded', output = %s::jsonb, error = NULL,
+            SET status = %s, output = %s::jsonb, error = NULL,
                 lease_token = NULL, lease_expires_at = NULL, updated_at = now(),
-                progress = jsonb_build_object('stage', 'completed', 'message', %s::text, 'percent', 100)
+                progress = jsonb_build_object('stage', %s::text, 'message', %s::text, 'percent', 100)
             WHERE job_id = %s
             RETURNING *
             """,
-            (json.dumps(completion.output), completed_message, job_id),
+            (
+                completed_status,
+                json.dumps(completion.output),
+                completed_stage,
+                completed_message,
+                job_id,
+            ),
         ).fetchone()
     return serialize_job(updated)
 
@@ -761,3 +798,193 @@ def fail_job(
     return update_leased_job(
         job_id, lease_token, new_status=JobStatus.failed, error=failure.error
     )
+
+
+# ---------------------------------------------------------------------------
+# Puerta de aprobacion humana
+#
+# El render deja el video en 'awaiting_approval'. Desde aqui una persona
+# revisa el MP4 y decide: aprobar (y opcionalmente publicar) o rechazar.
+# La publicacion NUNCA ocurre sin pasar por esta puerta.
+# ---------------------------------------------------------------------------
+
+
+def publish_video(job: JobRecord, platforms: list[str]) -> dict:
+    """Encola el video en el scheduler a traves del publisher-service.
+
+    Devuelve un diccionario con el resultado. Nunca lanza: si el publicador
+    falla, la aprobacion sigue siendo valida y el error queda registrado para
+    poder reintentar.
+    """
+    publisher_base = (settings.PUBLISHER_BASE_URL or "").rstrip("/")
+    if not publisher_base:
+        return {
+            "published": False,
+            "error": "PUBLISHER_BASE_URL no esta configurado en la API",
+        }
+
+    output = job.output or {}
+    video_key = output.get("video_object_key")
+    if not video_key:
+        return {
+            "published": False,
+            "error": "El trabajo no tiene video_object_key en su salida",
+        }
+
+    storage_base = (settings.STORAGE_PUBLIC_BASE_URL or "").rstrip("/")
+    if not storage_base:
+        return {
+            "published": False,
+            "error": "STORAGE_PUBLIC_BASE_URL no esta configurado en la API",
+        }
+
+    request = job.request or {}
+    title = str(request.get("topic") or "Contenido de Marketing Content OS")[:500]
+    payload = {
+        "video_url": f"{storage_base}/{video_key}",
+        "title": title,
+        "platforms": platforms,
+    }
+
+    try:
+        response = httpx.post(
+            f"{publisher_base}/v1/publish",
+            json=payload,
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        return {"published": False, "error": f"No se pudo contactar con el publicador: {exc}"}
+
+    if response.status_code >= 400:
+        detail = response.text[:500]
+        return {
+            "published": False,
+            "error": f"El publicador respondio {response.status_code}: {detail}",
+        }
+
+    try:
+        body = response.json()
+    except ValueError:
+        body = {"raw": response.text[:500]}
+    return {"published": True, "response": body, "request": payload}
+
+
+@app.post("/v1/jobs/{job_id}/approve", response_model=JobRecord)
+def approve_job(job_id: UUID, approval: JobApproval | None = None) -> JobRecord:
+    """Aprueba un video renderizado y, salvo que se indique lo contrario, lo publica.
+
+    Es idempotente: volver a aprobar un trabajo ya aprobado reintenta la
+    publicacion, que es la forma de recuperarla si el scheduler estaba caido.
+    """
+    decision = approval or JobApproval()
+
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM jobs WHERE job_id = %s FOR UPDATE", (job_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+        if row["status"] not in (
+            JobStatus.awaiting_approval.value,
+            JobStatus.approved.value,
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El trabajo esta en '{row['status']}' y no se puede aprobar. "
+                    "Solo los videos en 'awaiting_approval' o ya 'approved'."
+                ),
+            )
+
+        job = serialize_job(row)
+
+        request = job.request or {}
+        platforms = [str(p) for p in (decision.platforms or request.get("platforms") or [])]
+        if not platforms:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "El trabajo no indica plataformas de destino. Indicalas al "
+                    "aprobar (por ejemplo ['tiktok', 'instagram', 'youtube'])."
+                ),
+            )
+
+        publish_result: dict | None = None
+        if decision.publish:
+            publish_result = publish_video(job, platforms)
+
+        output = dict(job.output or {})
+        output["approval"] = {
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "publish_requested": decision.publish,
+            "platforms": platforms,
+            "note": decision.note,
+        }
+        if publish_result is not None:
+            output["publication"] = publish_result
+
+        message = "Video aprobado"
+        if publish_result is not None:
+            message = (
+                "Video aprobado y publicado"
+                if publish_result.get("published")
+                else "Video aprobado, pero la publicacion fallo"
+            )
+
+        updated = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'approved', output = %s::jsonb, updated_at = now(),
+                progress = jsonb_build_object(
+                    'stage', 'approved', 'message', %s::text, 'percent', 100
+                )
+            WHERE job_id = %s
+            RETURNING *
+            """,
+            (json.dumps(output), message, job_id),
+        ).fetchone()
+    return serialize_job(updated)
+
+
+@app.post("/v1/jobs/{job_id}/reject", response_model=JobRecord)
+def reject_job(job_id: UUID, rejection: JobRejection | None = None) -> JobRecord:
+    """Rechaza un video renderizado: no se publica y se queda registrado."""
+    reason = (rejection or JobRejection()).reason
+
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM jobs WHERE job_id = %s FOR UPDATE", (job_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+        if row["status"] not in (
+            JobStatus.awaiting_approval.value,
+            JobStatus.approved.value,
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"El trabajo esta en '{row['status']}' y no se puede rechazar."
+                ),
+            )
+
+        job = serialize_job(row)
+        output = dict(job.output or {})
+        output["rejection"] = {
+            "rejected_at": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+        }
+
+        updated = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'rejected', output = %s::jsonb, updated_at = now(),
+                progress = jsonb_build_object(
+                    'stage', 'rejected', 'message', 'Video rechazado', 'percent', 100
+                )
+            WHERE job_id = %s
+            RETURNING *
+            """,
+            (json.dumps(output), job_id),
+        ).fetchone()
+    return serialize_job(updated)

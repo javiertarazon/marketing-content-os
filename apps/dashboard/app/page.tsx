@@ -35,6 +35,18 @@ type Job = {
     audio_url?: string;
     video_object_key?: string;
     video_url?: string;
+    approval?: {
+      approved_at?: string;
+      publish_requested?: boolean;
+      platforms?: string[];
+      note?: string | null;
+    };
+    publication?: {
+      published?: boolean;
+      error?: string;
+      response?: { unit_id?: string; enqueued?: Array<{ id: string; target: string }> };
+    };
+    rejection?: { rejected_at?: string; reason?: string | null };
   } | null;
   error: string | null;
 };
@@ -104,6 +116,39 @@ export default function Dashboard() {
     const response = await fetch(`${apiBase}/v1/workers`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Estado de workers: HTTP ${response.status}`);
     setWorkerSessions((await response.json()) as WorkerSession[]);
+  }
+
+  async function decideJob(jobId: string, action: "approve" | "reject") {
+    setMessage(action === "approve" ? "Aprobando y publicando..." : "Rechazando el video...");
+    try {
+      const response = await fetch(`${apiBase}/v1/jobs/${jobId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          action === "approve" ? { publish: true } : { reason: "Rechazado desde el dashboard" },
+        ),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`HTTP ${response.status}: ${detail}`);
+      }
+      const job = (await response.json()) as Job;
+      const publication = job.output?.publication;
+      if (action === "approve") {
+        setMessage(
+          publication?.published
+            ? `Video aprobado y publicado en ${(publication.response?.enqueued ?? [])
+                .map((item) => item.target)
+                .join(", ")}`
+            : `Video aprobado, pero la publicacion fallo: ${publication?.error ?? "sin detalle"}`,
+        );
+      } else {
+        setMessage("Video rechazado: no se publico.");
+      }
+      await refreshJobs();
+    } catch (error) {
+      setMessage(`No se pudo ${action === "approve" ? "aprobar" : "rechazar"}: ${(error as Error).message}`);
+    }
   }
 
   useEffect(() => {
@@ -443,10 +488,19 @@ export default function Dashboard() {
                 />
               </div>
             )}
-            {job.worker === "render" && job.status === "succeeded" &&
+            {job.worker === "render" &&
+              ["awaiting_approval", "approved", "rejected"].includes(job.status) &&
               (job.output?.video_object_key || job.output?.video_url) && (
               <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                <p><strong>Video final listo para revisión y publicación:</strong></p>
+                <p>
+                  <strong>
+                    {job.status === "awaiting_approval"
+                      ? "Video final listo: pendiente de tu aprobacion"
+                      : job.status === "approved"
+                        ? "Video aprobado"
+                        : "Video rechazado"}
+                  </strong>
+                </p>
                 <video
                   controls
                   src={job.output.video_url ?? `${apiBase}/v1/jobs/${job.job_id}/media/video`}
@@ -460,15 +514,58 @@ export default function Dashboard() {
                   >
                     Descargar MP4
                   </a>
+                  {job.status === "awaiting_approval" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => decideJob(job.job_id, "approve")}
+                        style={{ padding: "8px 14px", background: "#10b981", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        Aprobar y publicar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => decideJob(job.job_id, "reject")}
+                        style={{ padding: "8px 14px", background: "#ef4444", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        Rechazar
+                      </button>
+                    </>
+                  )}
                   <a
-                    href={mixpostUrl}
+                    href={openDispatchUrl}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ padding: "8px 14px", background: "#10b981", color: "#fff", borderRadius: 4, textDecoration: "none" }}
+                    style={{ padding: "8px 14px", background: "#6b7280", color: "#fff", borderRadius: 4, textDecoration: "none" }}
                   >
-                    Aprobar y Programar en Mixpost Lite
+                    Cola del scheduler (Open-Dispatch)
                   </a>
                 </div>
+                {job.output?.publication && (
+                  <p style={{ fontSize: 14 }}>
+                    {job.output.publication.published ? (
+                      <>
+                        <strong>Publicado:</strong>{" "}
+                        {(job.output.publication.response?.enqueued ?? [])
+                          .map((item) => item.target)
+                          .join(", ")}
+                        {job.output.publication.response?.unit_id
+                          ? ` · unidad ${job.output.publication.response.unit_id}`
+                          : ""}
+                      </>
+                    ) : (
+                      <>
+                        <strong>La publicacion fallo:</strong>{" "}
+                        {job.output.publication.error}
+                      </>
+                    )}
+                  </p>
+                )}
+                {job.output?.rejection?.reason && (
+                  <p style={{ fontSize: 14 }}>
+                    <strong>Motivo del rechazo:</strong> {job.output.rejection.reason}
+                  </p>
+                )}
               </div>
             )}
           </li>

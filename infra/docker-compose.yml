@@ -34,6 +34,9 @@ services:
       - ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-content}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-content}
+      # Al aprobar un video, la API lo encola a traves del publisher-service.
+      # Dentro de la red de Docker se llama por su nombre de servicio.
+      PUBLISHER_BASE_URL: ${PUBLISHER_BASE_URL:-http://publisher:8001}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
