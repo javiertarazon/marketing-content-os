@@ -1114,6 +1114,14 @@
     {
       "comando": "rebuild + recreacion de la pila y prueba end-to-end tras los arreglos E2E-01..E2E-03",
       "resultado": "OK: API viva con /docs y /openapi.json en 200, dispatch de 3 plataformas encolado, medio descargado al volumen compartido con propietario dispatch:dispatch y borrado por el worker sin root. Suite: 52 tests passed."
+    },
+    {
+      "comando": "recorrido completo en local: research -> guion -> voz -> render -> aprobar -> publicar",
+      "resultado": "OK. Research job 36e18c64: virales de YouTube, guion de Qwen (2 min) y voz de OmniVoice (9 min, WAV de 1.820.700 bytes) subido a R2. Render job 57b28adf: npm install (3 min), remotion browser ensure y remotion render (4,5 min) con el Chrome local; MP4 de 2.728.400 bytes en renders/57b28adf-9340-4dc0-9eeb-3cb5b9e708f9.mp4, validado con ffprobe: h264, 1080x1920, 30 fps, AAC 48 kHz estereo, 38,91 s de duracion y volumen medio -22,6 dB. El render queda en 'awaiting_approval'. Al aprobar: la cola de Open-Dispatch pasa de 9 a 10 con la unidad f8d8f5a3-a4f9-4c93-97cc-3624294a0131 para youtube, y el trabajo queda en 'approved' con la URL publica, la unidad y la respuesta del publicador."
+    },
+    {
+      "comando": "GET del MP4 por la URL publica de r2.dev",
+      "resultado": "HTTP 200 con User-Agent de navegador, Instagram y TikTok."
     }
   ],
   "open_decisions": [
@@ -1401,6 +1409,85 @@
       "fix": "Se desactiva el healthcheck heredado en el servicio open-dispatch-worker con 'healthcheck: disable: true'. La salud real del worker se comprueba en sus logs.",
       "status": "aplicado y verificado",
       "verificacion": "Tras recrear la pila, todos los contenedores aparecen Up o healthy y ninguno en unhealthy."
+    },
+    {
+      "id": "E2E-04",
+      "severidad": "P0",
+      "area": "apps/api, packages/python/core, apps/dashboard",
+      "titulo": "El video se publicaba sin revision humana: no existia estado de aprobacion",
+      "file": "apps/api/main.py, packages/python/core/schemas.py, apps/dashboard/app/page.tsx",
+      "problema": "El job de render terminaba en 'succeeded' y el dashboard solo ofrecia 'Descargar MP4' y un enlace manual a Mixpost. No habia forma de revisar el video ni de bloquear la publicacion, y el publisher-service no estaba cableado a nada.",
+      "fix": "JobStatus gana 'awaiting_approval', 'approved' y 'rejected' (se recrea la restriccion CHECK de la tabla jobs). complete_job deja el render en 'awaiting_approval'. Se anaden POST /v1/jobs/{id}/approve y POST /v1/jobs/{id}/reject. Al aprobar, la API construye la URL publica del MP4 y la encola en el scheduler via publisher-service; si el publicador falla, la aprobacion sigue siendo valida y el error queda en output.publication.error. El dashboard muestra los botones Aprobar y publicar y Rechazar.",
+      "regresion": "tests/test_approval_gate.py (11 tests).",
+      "status": "aplicado y verificado",
+      "verificacion": "Sobre el video real: el render queda en 'awaiting_approval' con el MP4 en R2; al aprobar, la cola de Open-Dispatch pasa de 9 a 10 con la unidad f8d8f5a3-a4f9-4c93-97cc-3624294a0131 y el trabajo queda en 'approved'. Ademas, contra jobs de prueba: rechazar no encola nada, reaprobar reintenta y aprobar un rechazado da 409."
+    },
+    {
+      "id": "E2E-05",
+      "severidad": "P1",
+      "area": "apps/voice-studio-space",
+      "titulo": "El Space de voz no podia arrancar: omnivoice no estaba en requirements.txt",
+      "file": "apps/voice-studio-space/requirements.txt",
+      "problema": "app.py hace 'from omnivoice import OmniVoice' pero la dependencia no figuraba en requirements.txt, de modo que el Space moria al importar. El paquete si existe en PyPI (omnivoice 0.2.1) y el modelo k2-fsa/OmniVoice existe en Hugging Face.",
+      "fix": "Se anade 'omnivoice>=0.2.1,<1' a requirements.txt.",
+      "status": "aplicado",
+      "verificacion": "El Space desplegado responde con token y expone el api_name 'predict', y genero una narracion real de 1.820.700 bytes. El fallo de import solo se reproduciria al redesplegar."
+    },
+    {
+      "id": "E2E-06",
+      "severidad": "P1",
+      "area": "apps/workers",
+      "titulo": "El worker de render moria antes de empezar al buscar ffmpeg",
+      "file": "apps/workers/local_render_worker.py",
+      "problema": "WINGET_FFMPEG_GLOBS estaba escrita como una CADENA, no como una tupla de patrones: faltaba la coma final, asi que el bucle de find_media_tool la recorria caracter a caracter y glob('/') lanzaba NotImplementedError: Non-relative patterns are unsupported. El error ocultaba que ffmpeg si estaba instalado.",
+      "fix": "Coma final (convierte la constante en tupla) y Path(SystemDrive) en lugar de la unidad C: hardcodeada.",
+      "status": "aplicado y verificado",
+      "verificacion": "ffprobe y ffmpeg se localizan en la carpeta de WinGet, Chrome en Program Files y npm.cmd en Program Files/nodejs."
+    },
+    {
+      "id": "E2E-07",
+      "severidad": "P2",
+      "area": "apps/workers",
+      "titulo": "Los workers no se podian ejecutar con su ruta",
+      "file": "apps/workers/local_research_worker.py, apps/workers/local_render_worker.py",
+      "problema": "Hacian 'from apps.workers import ...' pero al ejecutarlos con su ruta, sys.path[0] es el directorio del modulo y 'apps' no era importable.",
+      "fix": "Bootstrap de sys.path con la raiz del repositorio.",
+      "status": "aplicado y verificado",
+      "verificacion": "Ambos workers responden a --help con su ruta directa."
     }
-  ]
+  ],
+  "pipeline_local": {
+    "proposito": "Ejecutar el pipeline completo en Windows sin Colab ni tunel de Cloudflare: los workers de research y render se ejecutan como procesos locales y los Spaces de HF remotos generan el guion y la voz.",
+    "ficheros": [
+      "apps/workers/worker_common.py - config, cliente de la API con leases, clientes de R2 y de los Spaces",
+      "apps/workers/viral_research.py - busqueda de videos virales con y sin YOUTUBE_API_KEY",
+      "apps/workers/local_research_worker.py - virales, guion (Space script-generator), voz (Space voice-studio) y subida del WAV a R2",
+      "apps/workers/remotion_project.py - genera el proyecto Remotion (MarketingShort, 1080x1920 a 30 fps)",
+      "apps/workers/local_render_worker.py - descarga de R2, npm install, npx remotion render, validacion del MP4 y subida a R2",
+      "apps/workers/requirements-workers.txt - dependencias de los workers"
+    ],
+    "comandos": {
+      "research": "python apps/workers/local_research_worker.py --once --topic \"<nicho>\" --create-job --verbose",
+      "render": "python apps/workers/local_render_worker.py --once --verbose",
+      "nota": "El worker de research crea el trabajo de render hijo al completarse; el de render lo toma de la cola."
+    },
+    "requisitos": [
+      "ffmpeg y ffprobe (winget install Gyan.FFmpeg). El worker los busca tambien en la carpeta de WinGet.",
+      "Node.js y npm (npm.cmd en PowerShell).",
+      "Chromium: lo descarga 'npx remotion browser ensure', aunque si hay un Chrome o Edge local el worker lo usa con --browser-executable.",
+      "HF_TOKEN con acceso a los dos Spaces privados."
+    ],
+    "diferencias_respetadas_por_el_diseno": [
+      "API_BASE_URL admite http:// en local (los notebooks de Colab exigen https porque salen a Internet).",
+      "No se usa --browser-executable=/usr/bin/chromium: es una ruta de Linux.",
+      "Las rutas /content de Linux se sustituyen por un temporal escribible.",
+      "El .env del repo se lee de la raiz; no se versiona ni se imprime."
+    ]
+  },
+  "notas_de_entorno": {
+    "ffmpeg": "Instalado con winget (Gyan.FFmpeg 9.0.2). winget anade el directorio bin al PATH del sistema, pero una terminal ya abierta no lo ve.",
+    "youtube": "El valor 447002834549-...apps.googleusercontent.com que aporto el usuario es un OAuth 2.0 client ID de Google, NO una API key: la Data API responde 'API key not valid. Please pass a valid API key.' Se guardo como YOUTUBE_CLIENT_ID, que es lo que necesita la publicacion en YouTube junto con YOUTUBE_CLIENT_SECRET y YOUTUBE_REFRESH_TOKEN. La busqueda de virales usa el extractor sin clave.",
+    "agentes": "AGENTS.md en la raiz recoge las instrucciones globales de trabajo: idioma, verificacion por ejecucion, trazabilidad, pruebas, git y reglas del entorno Windows.",
+    "traspaso": "docs/estado-sesion-actual.json resume la sesion para poder retomarla en otro chat sin releer el historico."
+  }
 }
