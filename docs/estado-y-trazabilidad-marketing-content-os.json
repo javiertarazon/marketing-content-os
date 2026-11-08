@@ -1106,6 +1106,10 @@
     {
       "comando": "actionlint v1.7.12 .github/workflows/notebook-ci.yml",
       "resultado": "0 problemas (schema de GitHub Actions)"
+    },
+    {
+      "comando": "prueba end-to-end real contra la pila Docker (publisher -> Open-Dispatch -> worker)",
+      "resultado": "OK: dispatch con unit_id y 3 entradas encoladas, formatos verificados en /campaign, medio descargado al volumen compartido y worker reclamando una unidad vencida con reintento programmed. Detalle en infra_verificacion.prueba_end_to_end_real."
     }
   ],
   "open_decisions": [
@@ -1148,12 +1152,13 @@
       "id": "D5",
       "titulo": "Credenciales OAuth de las tres redes",
       "estado": "abierto",
-      "impacto": "Sin TIKTOK_ACCESS_TOKEN, IG_USER_ID/IG_TOKEN ni el trio de YouTube, Open-Dispatch encola la peticion pero su worker no puede publicar: la fila pasa a 'dead' con el motivo 'missing' del adaptador.",
+      "impacto": "Sin TIKTOK_ACCESS_TOKEN, IG_USER_ID/IG_TOKEN ni el trio de YouTube, Open-Dispatch encola las unidades pero ningun adaptador puede publicarlas. Las aprobaciones de Meta y TikTok tardan dias o semanas; YouTube es inmediato. El acceso publico del bucket R2 ya esta verificado y no es un bloqueante.",
       "opciones": [
         "YouTube ya es inmediato: crear el cliente OAuth y el refresh_token",
         "Meta (Instagram) y TikTok requieren aprobacion de la app de desarrollador: dias o semanas",
         "Publicar primero en YouTube y dejar TikTok e Instagram para cuando Meta responda"
-      ]
+      ],
+      "bloqueante_r2_resuelto": true
     }
   ],
   "how_to_continue": [
@@ -1231,7 +1236,20 @@
         "mitigacion": "Implementado en el adaptador; documentado en el README.",
         "estado": "resuelto"
       }
-    ]
+    ],
+    "verificacion_acceso_publico_r2": {
+      "metodo": "Se subio un objeto canario al bucket marketing-content-media con las credenciales S3, se pidio SIN credenciales contra STORAGE_PUBLIC_BASE_URL con cuatro User-Agent distintos y se borro el canario. Comprobacion previa de permisos: escritura y borrado permitidos, y el listado del bucket esta vacio.",
+      "resultado": {
+        "navegador": "HTTP 200 (contenido correcto)",
+        "instagram (facebookexternalhit)": "HTTP 200",
+        "tiktok": "HTTP 200",
+        "python-urllib (User-Agent por defecto)": "HTTP 403 con 'error code: 1010'",
+        "listado del bucket (GET /)": "HTTP 404, no es enumerable"
+      },
+      "conclusion": "El bucket SI tiene acceso publico r2.dev y TikTok e Instagram podran descargar el video. El 403/1010 no es que el objeto sea privado: es Cloudflare bloqueando la firma del User-Agent Python-urllib. Si una plataforma no descarga el video, hay que mirar el User-Agent, no el estado del bucket.",
+      "nota_de_seguridad": "El acceso publico de R2 es por clave, no por listado. Las claves de los objetos son aleatorias y no se enumeran, pero quien conozca la clave completa puede descargar el objeto.",
+      "estado": "resuelto"
+    }
   },
   "ci_estado": {
     "estado": "bloqueada por la cuenta de GitHub, no por el repositorio",
@@ -1289,7 +1307,7 @@
       "Settings -> Billing and plans -> Payment information: pagar la factura pendiente o corregir la tarjeta que fallo. GitHub bloquea la cuenta completa cuando hay saldo impagado.",
       "Comprobar en https://github.com/settings/billing que la cuenta ya no figura como bloqueada y que no queda ninguna factura vencida.",
       "En cuanto se regularice, relanzar la CI desde la pestana Actions: el workflow tiene workflow_dispatch para eso, sin necesidad de un commit.",
-      "Si el pago esta al dia y la cuenta sigue bloqueada, abrir un ticket a soporte con la anotacion 'your account is locked due to a billing issue' y el run id 42204204757."
+      "Si el pago esta al dia y la cuenta sigue bloqueada, abrir un ticket a soporte con la anotacion 'your account is locked due to a billing issue' y el run id 42204250745."
     ],
     "referencias": [
       "https://github.com/orgs/community/discussions/208350",
@@ -1304,7 +1322,8 @@
       "actionlint v1.7.12 paso sin avisos sobre el workflow real, confirmando que el fichero era valido.",
       "Al pasar el repositorio a publico, GitHub reconocio el workflow ('Notebook CI'), creo el job 'test' y dejo de aparecer la firma BuildFailed: el bloqueo de construccion desaparece, pero el job sigue sin arrancar.",
       "La anotacion del check-run da la causa exacta: la cuenta esta bloqueada por facturacion. Eso impide ejecutar Actions con independencia de la visibilidad del repositorio."
-    ]
+    ],
+    "nota_confirmada_por_ejecucion": "El run 42205250745 (push 71a0305, job 127850130738) repite la anotacion exacta y vuelve a arrancar sin runner (runner_id 0, steps 0). Confirma que el bloqueo depende solo de la cuenta y que ningun cambio en el repositorio lo mueve."
   },
   "repository_visibility": {
     "estado": "publico",
@@ -1316,5 +1335,30 @@
       "fichero": "referencia: auditoria ejecutada sobre el historial antes del cambio"
     },
     "consecuencia": "El codigo del proyecto queda visible para cualquiera. Las credenciales siguen en el .env local, que esta en .gitignore y no se versiona."
+  },
+  "infra_verificacion": {
+    "entorno": "Docker Desktop 29.7.2 (linux/amd64) levantado en esta maquina el 6-nov-2026 para la primera construccion y arranque reales.",
+    "imagenes_construidas": [
+      "infra-publisher:latest (250 MB) - apps/publisher-service/Dockerfile",
+      "infra-api:latest - apps/api/Dockerfile",
+      "infra-dashboard:latest - apps/dashboard/Dockerfile"
+    ],
+    "nota": "Los contenedores se levantan con: docker compose --env-file .env -f infra/docker-compose.yml --profile publisher --profile dispatch up -d --build. El servicio open-dispatch se construye desde el repositorio oficial fijado al commit 773dd54d4cec24a5995d8c722e9f02545cfba013.",
+    "prueba_end_to_end_real": {
+      "fecha": "2026-11-06",
+      "pila": "postgres (healthy) + api + dashboard + publisher + open-dispatch (healthy) + open-dispatch-worker, todos levantados con Docker 29.7.2",
+      "pasos_y_resultados": [
+        "GET http://127.0.0.1:8010/healthz -> 200.",
+        "GET http://127.0.0.1:8001/v1/integrations -> 200 con lista vacia, correcto: no hay credenciales OAuth configuradas.",
+        "POST http://127.0.0.1:8001/v1/publish con video_url publica de R2 y platforms [tiktok, instagram, youtube] -> 200 con unit_id y 3 entradas encoladas (una por plataforma) con scheduled_for en UTC.",
+        "GET /queue -> la cola pasa de 0 a 3 entradas; GET /campaign/{unit_id} devuelve los tres formatos con la forma exacta que exige Open-Dispatch: tiktok_post {video_url, caption, privacy}, instagram_post {caption, video_url} y youtube_short {video_path RELATIVA 'renders/<fichero>.mp4' sin '..', title, description, tags, privacy}.",
+        "El publisher descarga el medio al volumen compartido: en el contenedor de Open-Dispatch aparece /media/renders/<fichero>.mp4. Queda probado que publisher y worker comparten el volumen con la misma ruta, que es lo que exige youtube_short.",
+        "Un dispatch ya vencido: el worker lo reclama ('publishing 1 due row(s)'), intenta publicar y falla de forma controlada con 'TIKTOK_ACCESS_TOKEN missing', registra attempts=1 en la fila y programa reintento con backoff. El worker no se cae.",
+        "POST /campaign/{unit_id}/cancel -> 200 y las 4 filas pasan a 'canceled'."
+      ],
+      "limpieza": "Objetos de prueba borrados de R2 (bucket a 0 objetos) y fichero de prueba eliminado del volumen de medios. La cola conserva las filas canceladas como historial.",
+      "unica_bloqueante_restante": "Las credenciales OAuth de TikTok, Instagram y YouTube siguen vacias en .env. Es el unico punto que impide una publicacion real."
+    },
+    "nota_permisos_volumen_compartido": "El contenedor de Open-Dispatch corre como uid 999 (dispatch) y el publisher-service corre como root, porque su Dockerfile no fija USER. El publisher crea los ficheros de /media/renders como root, de modo que el worker puede leerlos (modo 644) pero no borrarlos: la limpieza exige 'docker exec -u root'. No rompe la publicacion, pero conviene alinear la propiedad de los ficheros."
   }
 }

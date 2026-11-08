@@ -86,13 +86,15 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
 
 3. La URL del tunel solo reenvia las operaciones worker: `POST /v1/jobs/next`, `POST /v1/jobs/{id}/heartbeat`, `POST /v1/jobs/{id}/progress`, `POST /v1/jobs/{id}/complete`, `POST /v1/jobs/{id}/fail` y `POST /v1/workers/heartbeat`. No publica el alta/listado de trabajos, el estado local de workers, la biblioteca, PostgreSQL, Mixpost ni la documentacion de la API. La API exige `WORKER_API_TOKEN` y lease para los trabajos. Copia el valor local de `WORKER_API_TOKEN` desde `.env` directamente a los Secrets de Colab; no lo pegues en el notebook ni en Git.
 
-4. Configura almacenamiento persistente **privado** en Cloudflare R2. La API local y ambos workers necesitan credenciales S3 con permisos solo para ese bucket. Guarda las credenciales en `.env` local y en Colab Secrets:
+4. Configura almacenamiento persistente en Cloudflare R2. La API local y ambos workers necesitan credenciales S3 con permisos solo para ese bucket. Guarda las credenciales en `.env` local y en Colab Secrets:
 
    - `S3_ENDPOINT_URL`: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
    - `S3_BUCKET`: nombre del bucket R2.
    - `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`: credenciales S3 del bucket.
 
-   No habilites `r2.dev` ni acceso público para el bucket. Los workers leen/escriben mediante S3 y el dashboard sirve audio/video con enlaces firmados de cinco minutos. `STORAGE_PUBLIC_BASE_URL` se conserva únicamente para compatibilidad con resultados anteriores.
+   Habilita el **acceso público `r2.dev`** del bucket. Es un requisito del publicador: Open-Dispatch entrega a TikTok e Instagram una URL HTTPS desde la que descargar el vídeo, y el publicador sólo acepta URLs cuyo host sea el de `STORAGE_PUBLIC_BASE_URL`. El acceso público de R2 es **por clave, no por listado**: `GET https://pub-<cuenta>.r2.dev/` devuelve 404 y sólo se puede descargar un objeto si se conoce su clave completa. Los workers siguen accediendo por credenciales S3 y el dashboard sigue sirviendo la biblioteca con enlaces firmados de cinco minutos.
+
+   Verificado en este entorno (bucket `marketing-content-media`): `GET https://pub-<cuenta>.r2.dev/<clave>` responde **200** con User-Agent de navegador, de Instagram y de TikTok, y **403 `error code: 1010`** con el User-Agent por defecto de Python (`Python-urllib`). Cloudflare bloquea esa firma concreta; no es que el objeto sea privado. Si una plataforma no descarga el vídeo, comprueba el User-Agent y no el estado del bucket.
 
    Para administrar R2 mediante la REST API desde este equipo, crea un token separado de las credenciales S3. En Cloudflare abre **My Profile > API Tokens > Create Token > Create Custom Token** y configura:
 
@@ -106,7 +108,7 @@ Para desarrollo se puede dar a la API local un endpoint HTTPS temporal con Cloud
 
    El token REST de Cloudflare solo se requiere para tareas de administración; la API y los workers usan las credenciales S3. Nunca pegues tokens ni claves en el chat, README, notebooks o repositorio.
 
-5. En el dashboard local, ve a **Biblioteca local de medios** y selecciona la carpeta de recursos. WAV, MP4, JPG, PNG y WEBP (hasta 250 MB por archivo) se importan al bucket R2 privado. No se comparte ninguna ruta del disco con Colab; los workers descargan los objetos desde R2. Para una voz clonada, selecciona la muestra WAV, escribe su transcripción exacta y confirma que eres titular o tienes autorización. OmniVoice usará esa referencia para narrar el guion nuevo. Para editar con material propio, selecciona un fondo MP4 o una imagen; se conserva el video, pero se silencia su audio original para priorizar la narración.
+5. En el dashboard local, ve a **Biblioteca local de medios** y selecciona la carpeta de recursos. WAV, MP4, JPG, PNG y WEBP (hasta 250 MB por archivo) se importan al bucket R2, con clave propia y accesibles por URL pública (eso es lo que necesita el publicador para entregar el vídeo a TikTok e Instagram). No se comparte ninguna ruta del disco con Colab; los workers descargan los objetos desde R2. Para una voz clonada, selecciona la muestra WAV, escribe su transcripción exacta y confirma que eres titular o tienes autorización. OmniVoice usará esa referencia para narrar el guion nuevo. Para editar con material propio, selecciona un fondo MP4 o una imagen; se conserva el video, pero se silencia su audio original para priorizar la narración.
 
 6. En **cada notebook** abre el panel **Secrets** (icono de llave), crea cada nombre, pega su valor y habilita el acceso para el notebook. Usa exactamente:
 
