@@ -225,6 +225,59 @@ Para habilitar la biblioteca local, completa `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3
 
 Para apagar los servicios locales: `docker compose --profile dispatch --profile scheduler --env-file .env -f infra/docker-compose.yml down`. Los datos de PostgreSQL, Open-Dispatch y Mixpost se mantienen en volúmenes Docker.
 
+## Pipeline completo en local (sin Colab ni túnel)
+
+Los dos workers de Colab tienen equivalentes locales en `apps/workers/` que se ejecutan como procesos de Python en Windows. Así el pipeline entero se puede probar en esta máquina, sin abrir Colab y sin levantar el túnel de Cloudflare: los Spaces de Hugging Face remotos siguen generando el guion y la voz.
+
+Requisitos: `ffmpeg` y `ffprobe` en el PATH (`winget install Gyan.FFmpeg`), Node.js con `npm.cmd`, un `HF_TOKEN` con acceso a los dos Spaces privados, y la pila de Docker levantada.
+
+```powershell
+# 1) Levantar la pila (Postgres, API, dashboard, publicador, Open-Dispatch)
+docker compose --profile dispatch --env-file .env -f infra/docker-compose.yml up -d --build
+
+# 2) Research: busca los vídeos más virales del nicho, genera el guion en el
+#    Space de Qwen, la voz en el de OmniVoice y sube el WAV a R2.
+#    Al completarse, la API encola sola el trabajo de render.
+python apps\workers\local_research_worker.py --once --topic "finanzas personales" --create-job --verbose
+
+# 3) Render: descarga el WAV de R2, monta el proyecto Remotion (MarketingShort,
+#    1080x1920@30), renderiza con ffmpeg y sube el MP4 a R2.
+python apps\workers\local_render_worker.py --once --verbose
+```
+
+La búsqueda de vídeos virales funciona **sin `YOUTUBE_API_KEY`**: el extractor lee la página de resultados de YouTube, ordena por número de vistas y devuelve los más vistos. Si la clave está definida, se usa la YouTube Data API oficial con `order=viewCount`, que es más precisa.
+
+Los workers locales tienen en cuenta tres diferencias con los notebooks: `API_BASE_URL` admite `http://` (en Colab tiene que ser `https://` porque la salida es a Internet), no se usa `--browser-executable=/usr/bin/chromium` (ruta de Linux) y las rutas `/content` se sustituyen por un directorio temporal escribible.
+
+## La puerta de aprobación: el video se publica solo si alguien lo aprueba
+
+El render **no** termina en «completado». Cuando el MP4 está listo, el trabajo pasa al estado `awaiting_approval` y se queda ahí. Hasta que una persona lo aprueba, no se publica nada.
+
+| Estado | Significado |
+| --- | --- |
+| `awaiting_approval` | El video está renderizado y esperando revisión. |
+| `approved` | Alguien lo ha aprobado. La publicación se ha intentado. |
+| `rejected` | Alguien lo ha rechazado. No se publica y queda el motivo. |
+
+En el dashboard, el video aparece con los botones **Aprobar y publicar** y **Rechazar**, y con el resultado de la publicación (unidades encoladas en el scheduler o el error).
+
+Por API:
+
+```powershell
+# Aprobar y publicar en las plataformas del trabajo original
+curl.exe -X POST http://127.0.0.1:8000/v1/jobs/<job_id>/approve -d "{\"publish\": true}" -H "Content-Type: application/json"
+
+# Aprobar sin publicar (para revisarlo por otro canal antes)
+curl.exe -X POST http://127.0.0.1:8000/v1/jobs/<job_id>/approve -d "{\"publish\": false}" -H "Content-Type: application/json"
+
+# Rechazar
+curl.exe -X POST http://127.0.0.1:8000/v1/jobs/<job_id>/reject -d "{\"reason\": \"el gancho no convence\"}" -H "Content-Type: application/json"
+```
+
+Al aprobar, la API construye la URL pública del MP4 a partir de `STORAGE_PUBLIC_BASE_URL` y la encola en el scheduler llamando a `publisher-service` (`PUBLISHER_BASE_URL`). Si el scheduler está caído, la aprobación **sigue siendo válida**: el error queda en `output.publication.error` y volver a aprobar reintenta la publicación. Aprobar un trabajo ya aprobado vuelve a encolarlo; aprobar uno rechazado devuelve `409`.
+
+> La API no autentica estas rutas, igual que `POST /v1/jobs` o `POST /v1/assets`. Hoy la protección es que la API escucha solo en `127.0.0.1` y que el worker-gateway no reenvía estas rutas. Queda dentro de la decisión pendiente **D1** (modelo de autenticación).
+
 ## Hugging Face Spaces
 
 Clona primero VoiceStudio con `python scripts/clone_third_party.py`. Instala la CLI `hf` en WSL (`uv tool install huggingface_hub`) e inicia sesion (`hf auth login`) con un token que permita crear Spaces y subir archivos. La cuenta debe ser elegible para ZeroGPU; las cuentas gratuitas requieren correo verificado y mas de 30 dias de antiguedad, y tienen cuota diaria. Ejecuta `bash scripts/deploy_hf_spaces.sh`: crea/actualiza `voice-studio-agent` como Space privado Gradio con hardware `zero-a10g` (el identificador de ZeroGPU en la CLI actual) y publica la app. No se selecciona T4 ni hardware facturable. Tras publicar, `hf spaces zero-gpu quota` consulta el saldo diario.
