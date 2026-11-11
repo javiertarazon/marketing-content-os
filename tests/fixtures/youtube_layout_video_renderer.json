@@ -1,0 +1,275 @@
+{
+  "descripcion": "Layout A real de YouTube: cada resultado es un videoRenderer con el titulo en title.runs[0].text y las vistas en viewCountText.simpleText.",
+  "results": [
+    {
+      "videoRenderer": {
+        "videoId": "tVQzlO-z4eQ",
+        "title": {
+          "runs": [
+            {
+              "text": "3 HERRAMIENTAS para mejorar tus FINANZAS PERSONALES💸 Sergio Fernández [Conferencia]"
+            }
+          ],
+          "accessibility": {
+            "accessibilityData": {
+              "label": "3 HERRAMIENTAS para mejorar tus FINANZAS PERSONALES💸 Sergio Fernández [Conferencia] 1 hora y 36 minutos"
+            }
+          }
+        },
+        "viewCountText": {
+          "simpleText": "8,608,831 vistas"
+        },
+        "ownerText": {
+          "runs": [
+            {
+              "text": "IPP Formación para la vida real",
+              "navigationEndpoint": {
+                "clickTrackingParams": "CJkCENwwGAAiEwibtbW-hfmXAxVsKzEGHRXqJvzKAQS0Dm89",
+                "commandMetadata": {
+                  "webCommandMetadata": {
+                    "url": "/@IPPFormacion",
+                    "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                    "rootVe": 3611,
+                    "apiUrl": "/youtubei/v1/browse"
+                  }
+                },
+                "browseEndpoint": {
+                  "browseId": "UC1bpijD0RHo2thAWaMrNhUg",
+                  "canonicalBaseUrl": "/@IPPFormacion"
+                }
+              }
+            }
+          ]
+        },
+        "publishedTimeText": {
+          "simpleText": "hace 10 a"
+        }
+      }
+    },
+    {
+      "videoRenderer": {
+        "videoId": "QThz1B8SHmc",
+        "title": {
+          "runs": [
+            {
+              "text": "Cómo administrar tu dinero como el 1%"
+            }
+          ],
+          "accessibility": {
+            "accessibilityData": {
+              "label": "Cómo administrar tu dinero como el 1% 33 minutos"
+            }
+          }
+        },
+        "viewCountText": {
+          "simpleText": "8,259,896 vistas"
+        },
+        "ownerText": {
+          "runs": [
+            {
+              "text": "Mark Tilbury",
+              "navigationEndpoint": {
+                "clickTrackingParams": "CIMCENwwGAEiEwibtbW-hfmXAxVsKzEGHRXqJvzKAQS0Dm89",
+                "commandMetadata": {
+                  "webCommandMetadata": {
+                    "url": "/@marktilbury",
+                    "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                    "rootVe": 3611,
+                    "apiUrl": "/youtubei/v1/browse"
+                  }
+                },
+                "browseEndpoint": {
+                  "browseId": "UCxgAuX3XZROujMmGphN_scA",
+                  "canonicalBaseUrl": "/@marktilbury"
+                }
+              }
+            }
+          ]
+        },
+        "publishedTimeText": {
+          "simpleText": "hace 1 a"
+        }
+      }
+    },
+    {
+      "videoRenderer": {
+        "videoId": "7vk5PoUUkPc",
+        "title": {
+          "runs": [
+            {
+              "text": "Arturo Elías Ayub: Lecciones de Negocios, Dinero y Éxito | Dimes y Billetes #318"
+            }
+          ],
+          "accessibility": {
+            "accessibilityData": {
+              "label": "Arturo Elías Ayub: Lecciones de Negocios, Dinero y Éxito | Dimes y Billetes #318 1 hora y 24 minutos"
+            }
+          }
+        },
+        "viewCountText": {
+          "simpleText": "4,454,352 vistas"
+        },
+        "ownerText": {
+          "runs": [
+            {
+              "text": "Moris Dieck | Finanzas e Inversiones ",
+              "navigationEndpoint": {
+                "clickTrackingParams": "CPwBENwwGAIiEwibtbW-hfmXAxVsKzEGHRXqJvzKAQS0Dm89",
+                "commandMetadata": {
+                  "webCommandMetadata": {
+                    "url": "/@MorisDieck",
+                    "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                    "rootVe": 3611,
+                    "apiUrl": "/youtubei/v1/browse"
+                  }
+                },
+                "browseEndpoint": {
+                  "browseId": "UCxFACDJ98idvo9Gq9M9AQgg",
+                  "canonicalBaseUrl": "/@MorisDieck"
+                }
+              }
+            }
+          ]
+        },
+        "publishedTimeText": {
+          "simpleText": "hace 1 a"
+        }
+      }
+    },
+    {
+      "videoRenderer": {
+        "videoId": "1G3S0mGM7PU",
+        "title": {
+          "runs": [
+            {
+              "text": "¡PRUÉBALO POR 11 DIAS! 11 Hábitos que Mejorarán Inmediatamente tus Finanzas Personales - Jack Ma"
+            }
+          ],
+          "accessibility": {
+            "accessibilityData": {
+              "label": "¡PRUÉBALO POR 11 DIAS! 11 Hábitos que Mejorarán Inmediatamente tus Finanzas Personales - Jack Ma 12 minutos y 13 segundos"
+            }
+          }
+        },
+        "viewCountText": {
+          "simpleText": "3,416,986 vistas"
+        },
+        "ownerText": {
+          "runs": [
+            {
+              "text": "Financial Mentors TV - Español",
+              "navigationEndpoint": {
+                "clickTrackingParams": "COgBENwwGAMiEwibtbW-hfmXAxVsKzEGHRXqJvzKAQS0Dm89",
+                "commandMetadata": {
+                  "webCommandMetadata": {
+                    "url": "/c/FinancialMentorsTVEspa%C3%B1ol",
+                    "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                    "rootVe": 3611,
+                    "apiUrl": "/youtubei/v1/browse"
+                  }
+                },
+                "browseEndpoint": {
+                  "browseId": "UCAqatD5Kmib2qQ1OIVC5_nQ",
+                  "canonicalBaseUrl": "/c/FinancialMentorsTVEspa%C3%B1ol"
+                }
+              }
+            }
+          ]
+        },
+        "publishedTimeText": {
+          "simpleText": "hace 8 a"
+        }
+      }
+    },
+    {
+      "videoRenderer": {
+        "videoId": "NEzqHbtGa9U",
+        "title": {
+          "runs": [
+            {
+              "text": "Cómo administrar tu dinero como el 1%"
+            }
+          ],
+          "accessibility": {
+            "accessibilityData": {
+              "label": "Cómo administrar tu dinero como el 1% 10 minutos y 4 segundos"
+            }
+          }
+        },
+        "viewCountText": {
+          "simpleText": "3,062,790 vistas"
+        },
+        "ownerText": {
+          "runs": [
+            {
+              "text": "Nischa",
+              "navigationEndpoint": {
+                "clickTrackingParams": "CNIBENwwGAQiEwibtbW-hfmXAxVsKzEGHRXqJvzKAQS0Dm89",
+                "commandMetadata": {
+                  "webCommandMetadata": {
+                    "url": "/@nischa",
+                    "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                    "rootVe": 3611,
+                    "apiUrl": "/youtubei/v1/browse"
+                  }
+                },
+                "browseEndpoint": {
+                  "browseId": "UCQpPo9BNwezg54N9hMFQp6Q",
+                  "canonicalBaseUrl": "/@nischa"
+                }
+              }
+            }
+          ]
+        },
+        "publishedTimeText": {
+          "simpleText": "hace 2 a"
+        }
+      }
+    },
+    {
+      "videoRenderer": {
+        "videoId": "GfdJOaUWFg4",
+        "title": {
+          "runs": [
+            {
+              "text": "El hombre más rico de Babilonia Audiolibro Completo en Español | George S. Clason"
+            }
+          ],
+          "accessibility": {
+            "accessibilityData": {
+              "label": "El hombre más rico de Babilonia Audiolibro Completo en Español | George S. Clason 4 horas y 40 minutos"
+            }
+          }
+        },
+        "viewCountText": {
+          "simpleText": "2,666,037 vistas"
+        },
+        "ownerText": {
+          "runs": [
+            {
+              "text": "Aubiblio Narraciones",
+              "navigationEndpoint": {
+                "clickTrackingParams": "CLgBENwwGAUiEwibtbW-hfmXAxVsKzEGHRXqJvzKAQS0Dm89",
+                "commandMetadata": {
+                  "webCommandMetadata": {
+                    "url": "/@AubiblioNarraciones",
+                    "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                    "rootVe": 3611,
+                    "apiUrl": "/youtubei/v1/browse"
+                  }
+                },
+                "browseEndpoint": {
+                  "browseId": "UCH5kUshoNleZvMdypocgDNw",
+                  "canonicalBaseUrl": "/@AubiblioNarraciones"
+                }
+              }
+            }
+          ]
+        },
+        "publishedTimeText": {
+          "simpleText": "hace 3 a"
+        }
+      }
+    }
+  ]
+}

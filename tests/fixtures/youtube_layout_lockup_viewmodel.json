@@ -1,0 +1,706 @@
+{
+  "descripcion": "Layout B real de YouTube: cada resultado es un lockupViewModel con el titulo en metadata.lockupMetadataViewModel.title.content y las vistas y la fecha en metadata.contentMetadataViewModel.metadataRows.",
+  "results": [
+    {
+      "lockupViewModel": {
+        "contentId": "tVQzlO-z4eQ",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "metadata": {
+          "lockupMetadataViewModel": {
+            "title": {
+              "content": "3 HERRAMIENTAS para mejorar tus FINANZAS PERSONALES💸 Sergio Fernández [Conferencia]"
+            },
+            "metadata": {
+              "contentMetadataViewModel": {
+                "metadataRows": [
+                  {
+                    "metadataParts": [
+                      {
+                        "avatarStack": {
+                          "avatarStackViewModel": {
+                            "text": {
+                              "content": "IPP Formación para la vida real",
+                              "commandRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 31,
+                                  "onTap": {
+                                    "innertubeCommand": {
+                                      "clickTrackingParams": "CL8BENTEDBgAIhMIod2B7oT5lwMV4zMxBh3xvTSXygEE05gKog==",
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/@IPPFormacion",
+                                          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                                          "rootVe": 3611,
+                                          "apiUrl": "/youtubei/v1/browse"
+                                        }
+                                      },
+                                      "browseEndpoint": {
+                                        "browseId": "UC1bpijD0RHo2thAWaMrNhUg",
+                                        "canonicalBaseUrl": "/@IPPFormacion"
+                                      }
+                                    }
+                                  }
+                                }
+                              ],
+                              "styleRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 31,
+                                  "weightLabel": "FONT_WEIGHT_NORMAL"
+                                }
+                              ]
+                            },
+                            "a11yLabel": null
+                          }
+                        },
+                        "icon": {
+                          "accessibilityLabel": "Verificada",
+                          "ytIcon": {
+                            "sources": [
+                              {
+                                "width": 14,
+                                "height": 14,
+                                "customImageSource": {
+                                  "youtubeIconSource": {
+                                    "clientResource": {
+                                      "icon": "YTICON_FILL_VERIFIED_BADGE_S12"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "8.6 M"
+                        },
+                        "accessibilityLabel": "8.6 millones de vistas",
+                        "leadingIcon": {
+                          "name": "PLAY_ARROW_OUTLINED",
+                          "height": 12,
+                          "width": 12
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "hace 10 a"
+                        },
+                        "accessibilityLabel": "hace 10 años"
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "Vivir con Dinero: un fin de semana en directo con Sergio Fernández para iniciar tu camino hacia la libertad financiera. 10 y 11 de ..."
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lockupViewModel": {
+        "contentId": "QThz1B8SHmc",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "metadata": {
+          "lockupMetadataViewModel": {
+            "title": {
+              "content": "Cómo administrar tu dinero como el 1%"
+            },
+            "metadata": {
+              "contentMetadataViewModel": {
+                "metadataRows": [
+                  {
+                    "metadataParts": [
+                      {
+                        "avatarStack": {
+                          "avatarStackViewModel": {
+                            "text": {
+                              "content": "Mark Tilbury",
+                              "commandRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 12,
+                                  "onTap": {
+                                    "innertubeCommand": {
+                                      "clickTrackingParams": "CLMBENTEDCITCKHdge6E-ZcDFeMzMQYd8b00l8oBBNOYCqI=",
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/@marktilbury",
+                                          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                                          "rootVe": 3611,
+                                          "apiUrl": "/youtubei/v1/browse"
+                                        }
+                                      },
+                                      "browseEndpoint": {
+                                        "browseId": "UCxgAuX3XZROujMmGphN_scA",
+                                        "canonicalBaseUrl": "/@marktilbury"
+                                      }
+                                    }
+                                  }
+                                }
+                              ],
+                              "styleRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 12,
+                                  "weightLabel": "FONT_WEIGHT_NORMAL"
+                                }
+                              ]
+                            },
+                            "a11yLabel": null
+                          }
+                        },
+                        "icon": {
+                          "accessibilityLabel": "Verificada",
+                          "ytIcon": {
+                            "sources": [
+                              {
+                                "width": 14,
+                                "height": 14,
+                                "customImageSource": {
+                                  "youtubeIconSource": {
+                                    "clientResource": {
+                                      "icon": "YTICON_FILL_VERIFIED_BADGE_S12"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "8.2 M"
+                        },
+                        "accessibilityLabel": "8.2 millones de vistas",
+                        "leadingIcon": {
+                          "name": "PLAY_ARROW_OUTLINED",
+                          "height": 12,
+                          "width": 12
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "hace 1 a"
+                        },
+                        "accessibilityLabel": "hace 1 año"
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "¡Bienvenido de nuevo al canal!\nHola, soy Mark Tilbury, y si estás aquí es porque quieres aprender a pensar y actuar como el 1 ..."
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": []
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lockupViewModel": {
+        "contentId": "QThz1B8SHmc",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "metadata": {
+          "lockupMetadataViewModel": {
+            "title": {
+              "content": "How To Manage Your Money Like The 1%"
+            },
+            "metadata": {
+              "contentMetadataViewModel": {
+                "metadataRows": [
+                  {
+                    "metadataParts": [
+                      {
+                        "avatarStack": {
+                          "avatarStackViewModel": {
+                            "text": {
+                              "content": "Mark Tilbury",
+                              "commandRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 12,
+                                  "onTap": {
+                                    "innertubeCommand": {
+                                      "clickTrackingParams": "CKcBENTEDCITCKHdge6E-ZcDFeMzMQYd8b00l8oBBNOYCqI=",
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/@marktilbury",
+                                          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                                          "rootVe": 3611,
+                                          "apiUrl": "/youtubei/v1/browse"
+                                        }
+                                      },
+                                      "browseEndpoint": {
+                                        "browseId": "UCxgAuX3XZROujMmGphN_scA",
+                                        "canonicalBaseUrl": "/@marktilbury"
+                                      }
+                                    }
+                                  }
+                                }
+                              ],
+                              "styleRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 12,
+                                  "weightLabel": "FONT_WEIGHT_NORMAL"
+                                }
+                              ]
+                            },
+                            "a11yLabel": null
+                          }
+                        },
+                        "icon": {
+                          "accessibilityLabel": "Verificada",
+                          "ytIcon": {
+                            "sources": [
+                              {
+                                "width": 14,
+                                "height": 14,
+                                "customImageSource": {
+                                  "youtubeIconSource": {
+                                    "clientResource": {
+                                      "icon": "YTICON_FILL_VERIFIED_BADGE_S12"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "8.2 M"
+                        },
+                        "accessibilityLabel": "8.2 millones de vistas",
+                        "leadingIcon": {
+                          "name": "PLAY_ARROW_OUTLINED",
+                          "height": 12,
+                          "width": 12
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "hace 1 a"
+                        },
+                        "accessibilityLabel": "hace 1 año"
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "¡Bienvenido de nuevo al canal!\nHola, soy Mark Tilbury, y si estás aquí es porque quieres aprender a pensar y actuar como el 1 ..."
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": []
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lockupViewModel": {
+        "contentId": "7vk5PoUUkPc",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "metadata": {
+          "lockupMetadataViewModel": {
+            "title": {
+              "content": "Arturo Elías Ayub: Lecciones de Negocios, Dinero y Éxito | Dimes y Billetes #318"
+            },
+            "metadata": {
+              "contentMetadataViewModel": {
+                "metadataRows": [
+                  {
+                    "metadataParts": [
+                      {
+                        "avatarStack": {
+                          "avatarStackViewModel": {
+                            "text": {
+                              "content": "Moris Dieck | Finanzas e Inversiones ",
+                              "commandRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 37,
+                                  "onTap": {
+                                    "innertubeCommand": {
+                                      "clickTrackingParams": "CJ0BENTEDBgCIhMIod2B7oT5lwMV4zMxBh3xvTSXygEE05gKog==",
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/@MorisDieck",
+                                          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                                          "rootVe": 3611,
+                                          "apiUrl": "/youtubei/v1/browse"
+                                        }
+                                      },
+                                      "browseEndpoint": {
+                                        "browseId": "UCxFACDJ98idvo9Gq9M9AQgg",
+                                        "canonicalBaseUrl": "/@MorisDieck"
+                                      }
+                                    }
+                                  }
+                                }
+                              ],
+                              "styleRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 37,
+                                  "weightLabel": "FONT_WEIGHT_NORMAL"
+                                }
+                              ]
+                            },
+                            "a11yLabel": null
+                          }
+                        },
+                        "icon": {
+                          "accessibilityLabel": "Verificada",
+                          "ytIcon": {
+                            "sources": [
+                              {
+                                "width": 14,
+                                "height": 14,
+                                "customImageSource": {
+                                  "youtubeIconSource": {
+                                    "clientResource": {
+                                      "icon": "YTICON_FILL_VERIFIED_BADGE_S12"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "4.4 M"
+                        },
+                        "accessibilityLabel": "4.4 millones de vistas",
+                        "leadingIcon": {
+                          "name": "PLAY_ARROW_OUTLINED",
+                          "height": 12,
+                          "width": 12
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "hace 1 a"
+                        },
+                        "accessibilityLabel": "hace 1 año"
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "... los secretos y desafíos de ser un emprendedor, sus mejores consejos de negociación y su visión sobre las finanzas personales ...",
+                          "styleRuns": [
+                            {
+                              "startIndex": 109,
+                              "length": 19,
+                              "weightLabel": "FONT_WEIGHT_MEDIUM"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "... la parte financiera de de los números de las finanzas personales algo que le quieras decir a la gente que se preparen moris de ...",
+                          "styleRuns": [
+                            {
+                              "startIndex": 49,
+                              "length": 19,
+                              "weightLabel": "FONT_WEIGHT_MEDIUM"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lockupViewModel": {
+        "contentId": "1G3S0mGM7PU",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "metadata": {
+          "lockupMetadataViewModel": {
+            "title": {
+              "content": "¡PRUÉBALO POR 11 DIAS! 11 Hábitos que Mejorarán Inmediatamente tus Finanzas Personales - Jack Ma"
+            },
+            "metadata": {
+              "contentMetadataViewModel": {
+                "metadataRows": [
+                  {
+                    "metadataParts": [
+                      {
+                        "avatarStack": {
+                          "avatarStackViewModel": {
+                            "text": {
+                              "content": "Financial Mentors TV - Español",
+                              "commandRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 30,
+                                  "onTap": {
+                                    "innertubeCommand": {
+                                      "clickTrackingParams": "CJMBENTEDBgDIhMIod2B7oT5lwMV4zMxBh3xvTSXygEE05gKog==",
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/c/FinancialMentorsTVEspa%C3%B1ol",
+                                          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                                          "rootVe": 3611,
+                                          "apiUrl": "/youtubei/v1/browse"
+                                        }
+                                      },
+                                      "browseEndpoint": {
+                                        "browseId": "UCAqatD5Kmib2qQ1OIVC5_nQ",
+                                        "canonicalBaseUrl": "/c/FinancialMentorsTVEspa%C3%B1ol"
+                                      }
+                                    }
+                                  }
+                                }
+                              ],
+                              "styleRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 30,
+                                  "weightLabel": "FONT_WEIGHT_NORMAL"
+                                }
+                              ]
+                            },
+                            "a11yLabel": null
+                          }
+                        },
+                        "icon": {
+                          "accessibilityLabel": "Verificada",
+                          "ytIcon": {
+                            "sources": [
+                              {
+                                "width": 14,
+                                "height": 14,
+                                "customImageSource": {
+                                  "youtubeIconSource": {
+                                    "clientResource": {
+                                      "icon": "YTICON_FILL_VERIFIED_BADGE_S12"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "3.4 M"
+                        },
+                        "accessibilityLabel": "3.4 millones de vistas",
+                        "leadingIcon": {
+                          "name": "PLAY_ARROW_OUTLINED",
+                          "height": 12,
+                          "width": 12
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "hace 8 a"
+                        },
+                        "accessibilityLabel": "hace 8 años"
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "Haga clic aquí AHORA para reclamar tus plantillas GRATUITAS de seguimiento del éxito y desbloquear tu potencial!"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "lockupViewModel": {
+        "contentId": "NEzqHbtGa9U",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "metadata": {
+          "lockupMetadataViewModel": {
+            "title": {
+              "content": "Cómo administrar tu dinero como el 1%"
+            },
+            "metadata": {
+              "contentMetadataViewModel": {
+                "metadataRows": [
+                  {
+                    "metadataParts": [
+                      {
+                        "avatarStack": {
+                          "avatarStackViewModel": {
+                            "text": {
+                              "content": "Nischa",
+                              "commandRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 6,
+                                  "onTap": {
+                                    "innertubeCommand": {
+                                      "clickTrackingParams": "CIcBENTEDCITCKHdge6E-ZcDFeMzMQYd8b00l8oBBNOYCqI=",
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/@nischa",
+                                          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                                          "rootVe": 3611,
+                                          "apiUrl": "/youtubei/v1/browse"
+                                        }
+                                      },
+                                      "browseEndpoint": {
+                                        "browseId": "UCQpPo9BNwezg54N9hMFQp6Q",
+                                        "canonicalBaseUrl": "/@nischa"
+                                      }
+                                    }
+                                  }
+                                }
+                              ],
+                              "styleRuns": [
+                                {
+                                  "startIndex": 0,
+                                  "length": 6,
+                                  "weightLabel": "FONT_WEIGHT_NORMAL"
+                                }
+                              ]
+                            },
+                            "a11yLabel": null
+                          }
+                        },
+                        "icon": {
+                          "accessibilityLabel": "Verificada",
+                          "ytIcon": {
+                            "sources": [
+                              {
+                                "width": 14,
+                                "height": 14,
+                                "customImageSource": {
+                                  "youtubeIconSource": {
+                                    "clientResource": {
+                                      "icon": "YTICON_FILL_VERIFIED_BADGE_S12"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "3 M"
+                        },
+                        "accessibilityLabel": "3 millones de vistas",
+                        "leadingIcon": {
+                          "name": "PLAY_ARROW_OUTLINED",
+                          "height": 12,
+                          "width": 12
+                        }
+                      },
+                      {
+                        "text": {
+                          "content": "hace 2 a"
+                        },
+                        "accessibilityLabel": "hace 2 años"
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": [
+                      {
+                        "text": {
+                          "content": "🚨 Reserva tu plaza para mi taller gratuito de inversión: https://nischa.me/invest Las primeras 500 personas que usen mi enlace ..."
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "metadataParts": []
+                  },
+                  {
+                    "metadataParts": []
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

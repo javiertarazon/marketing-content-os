@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1.0",
-  "generado_en": "2026-11-05T22:56:23+00:00",
-  "generado_por": "Auditoria tecnica + reescritura del publisher sobre Open-Dispatch (MCode)",
+  "generado_en": "2026-11-11T08:30:00-04:00",
+  "generado_por": "Auditoria tecnica + reescritura del publisher sobre Open-Dispatch (MCode); actualizado con los arreglos E2E-08..E2E-10 del extractor de YouTube",
   "proposito": "Manifiesto de trazabilidad para agentes: de donde viene el proyecto, que cambios se aplicaron, en que nivel esta cada componente y que falta para que funcione al 100%.",
   "project": {
     "name": "Marketing Content OS",
@@ -810,6 +810,26 @@
     {
       "status": "M",
       "path": "tests/test_postiz_adapter.py"
+    },
+    {
+      "status": "M",
+      "path": "apps/workers/viral_research.py"
+    },
+    {
+      "status": "A",
+      "path": "tests/test_viral_research.py"
+    },
+    {
+      "status": "A",
+      "path": "tests/fixtures/youtube_layout_video_renderer.json"
+    },
+    {
+      "status": "A",
+      "path": "tests/fixtures/youtube_layout_lockup_viewmodel.json"
+    },
+    {
+      "status": "M",
+      "path": "docs/estado-sesion-actual.json"
     }
   ],
   "diffstat": {
@@ -1065,7 +1085,7 @@
   "verification": [
     {
       "comando": ".venv\\Scripts\\python -m pytest -q",
-      "resultado": "48 passed, 2 warnings"
+      "resultado": "90 passed, 3 warnings (suite tras el arreglo E2E-11)"
     },
     {
       "comando": ".venv\\Scripts\\python scripts/smoke_publisher.py",
@@ -1122,6 +1142,18 @@
     {
       "comando": "GET del MP4 por la URL publica de r2.dev",
       "resultado": "HTTP 200 con User-Agent de navegador, Instagram y TikTok."
+    },
+    {
+      "comando": ".venv\\Scripts\\python -m pyflakes apps/workers/viral_research.py tests/test_viral_research.py",
+      "resultado": "0 problemas"
+    },
+    {
+      "comando": "git fetch origin y comparacion de los 88 ficheros versionados contra un clon limpio de origin/main",
+      "resultado": "main local y origin/main en el mismo commit (8cc4d52), sin divergencia. Los 88 ficheros versionados son identicos byte a byte salvo apps/workers/viral_research.py, que tenia trabajo local sin commitear. Las diferencias de fin de linea en el clon eran de core.autocrlf=true del clon, no de contenido."
+    },
+    {
+      "comando": "scrape_youtube_results('finanzas personales') y search_viral_videos('finanzas personales', api_key=None) contra YouTube real",
+      "resultado": "status='ok', 6 videos ordenados por vistas (10.372.251, 3.417.188, 3.064.482, 2.861.424, 2.812.187 y 1.725.273), con canal y fecha en todos ellos. Antes el worker devolvia 'no_results' por el defecto E2E-11."
     }
   ],
   "open_decisions": [
@@ -1454,6 +1486,54 @@
       "fix": "Bootstrap de sys.path con la raiz del repositorio.",
       "status": "aplicado y verificado",
       "verificacion": "Ambos workers responden a --help con su ruta directa."
+    },
+    {
+      "id": "E2E-08",
+      "severidad": "P1",
+      "area": "apps/workers",
+      "titulo": "El extractor de YouTube solo entendia el layout videoRenderer y devolvia no_results cuando YouTube servia lockupViewModel",
+      "file": "apps/workers/viral_research.py",
+      "problema": "El worker de investigacion extraia los resultados de busqueda con expresiones regulares sobre el HTML, buscando claves como 'title'.'runs'[0].'text'. YouTube reparte la respuesta de forma aleatoria entre dos layouts: 'videoRenderer' y 'lockupViewModel'. En el segundo el titulo vive en metadata.lockupMetadataViewModel.title.content y las vistas y la fecha en metadata.contentMetadataViewModel.metadataRows. Cuando tocaba ese layout el regex no encontraba ningun titulo, el worker devolvia status='no_results' y la etapa de investigacion se quedaba sin fuentes. Medido: 1 de cada 25 a 40 peticiones fallaba de esa forma.",
+      "fix": "Se anade la extraccion estructural desde 'ytInitialData': extract_initial_data() localiza y parsea el bloque JSON con conteo de llaves, _iter_nodes() recorre el arbol buscando una clave, y de ese nodo se derivan las fuentes con _source_from_video_renderer() y _source_from_lockup(). En el layout lockup las vistas y la fecha se leen de la etiqueta de accesibilidad de cada parte de metadatos ('8.6 millones de vistas'), que no depende de las abreviaturas por idioma. El extractor por expresiones regulares se conserva como respaldo para paginas sin 'ytInitialData' legible. Se descartan los videos repetidos que YouTube devuelve cuando el titulo tiene version traducida.",
+      "regresion": "tests/test_viral_research.py con los recortes reales de 'ytInitialData' guardados en tests/fixtures/: youtube_layout_video_renderer.json y youtube_layout_lockup_viewmodel.json. Comprueban titulo, canal, url, vistas y fecha de cada layout, y que la extraccion desde HTML cae al respaldo por regex.",
+      "status": "aplicado y verificado",
+      "verificacion": "Suite completa en verde (88 passed) con los dos layouts cubiertos por fixtures reales de YouTube. No verificado contra YouTube en vivo en esta sesion: la medicion de la frecuencia de fallo (1 de 25 a 40 peticiones) procede de la sesion anterior."
+    },
+    {
+      "id": "E2E-09",
+      "severidad": "P1",
+      "area": "apps/workers",
+      "titulo": "parse_view_count multiplicaba por un millon las vistas abreviadas ('8.6 M' devolvia 86.000.000)",
+      "file": "apps/workers/viral_research.py",
+      "problema": "El parser separaba el numero del sufijo de magnitud y multiplicaba el numero tal cual. En un conteo abreviado como '8.6 M' el punto es un separador decimal, no de miles, asi que devolvia 8.600.000 * 10 = 86.000.000 vistas. El error era de un orden de magnitud y contaminaba el orden por popularidad y la metrica de vistas por hora de la etapa de investigacion.",
+      "fix": "Se separan los dos casos. Sin sufijo de magnitud, todos los separadores son de miles y se eliminan. Con sufijo, el numero se interpreta con _parse_decimal_amount(): un unico separador con tres digitos detras es de miles ('1,234' -> 1234) y en cualquier otro caso es decimal ('8,6' -> 8.6). El multiplicador sale de _VIEW_COUNT_SUFFIXES, que reconoce 'K/k', 'M', 'B', 'mil', 'miles'/'millones', 'billones' y sus equivalentes en ingles.",
+      "regresion": "tests/test_viral_research.py: '8.6 M' -> 8600000, '8,6 M' -> 8600000, '2 M' -> 2000000, '12K views' -> 12000, '701 mil vistas' -> 701000, '4,4 millones de vistas' -> 4400000, '8,259,754 vistas' -> 8259754 y '8.259.754 vistas' -> 8259754.",
+      "status": "aplicado y verificado",
+      "verificacion": "25 tests del modulo en verde dentro de la suite completa (88 passed)."
+    },
+    {
+      "id": "E2E-10",
+      "severidad": "P1",
+      "area": "apps/workers",
+      "titulo": "_parse_relative_time reventaba con TypeError y no entendia las abreviaturas de YouTube en espanol",
+      "file": "apps/workers/viral_research.py",
+      "problema": "La funcion traducía 'mes' a 'months' y construia timedelta(months=...), argumento que no existe: el worker lanzaba TypeError al fechar un video publicado hace meses. Ademas el mapeo de abreviaturas era erroneo ('ano'/'año' caia en la rama de dias con multiplicador 365, lo que era correcto por accidente, pero 'a' y 'm' no se entendian), y las unidades aparecian ordenadas de forma que 'mes' se comia fragmentos de otras palabras.",
+      "fix": "Las unidades se expresan en dias (un dia por segundo, 1/1440 por minuto, 30,44 por mes, 365,25 por ano) en la tabla _RELATIVE_TIME_UNITS y se aplican con timedelta(days=...). Las abreviaturas reales de YouTube en espanol se midieron contra el 'uploadDate' de la pagina de watch: 'hace 10 a' son 10 anos, 'hace 3 m' son 3 meses y 'hace 2 sem.' son 2 semanas.",
+      "regresion": "tests/test_viral_research.py: 'hace 3 meses', 'hace 10 a', 'hace 2 sem.', 'hace 5 h' y 'hace 30 d' devuelven una marca ISO coherente con la unidad; un texto sin cantidad reconocible devuelve None.",
+      "status": "aplicado y verificado",
+      "verificacion": "25 tests del modulo en verde dentro de la suite completa (88 passed)."
+    },
+    {
+      "id": "E2E-11",
+      "severidad": "P2",
+      "area": "apps/workers",
+      "titulo": "El filtro de popularidad de YouTube se enviaba doblemente codificado y YouTube lo ignoraba",
+      "file": "apps/workers/viral_research.py",
+      "problema": "La constante POPULARITY_FILTER valia 'CAM%3D', ya escapada, y se pasaba en el parametro 'sp' de requests, que escapa otra vez: la URL final llevaba 'sp=CAM%253D'. YouTube no entiende ese valor, ignora el filtro de ordenar por numero de vistas y devuelve los resultados ordenados por relevancia. Con el filtro correcto la respuesta llega ordenada de mas a menos vistas: medido contra YouTube real con el tema 'finanzas personales', la primera peticion con 'sp=CAM%3D' devuelve 4.463.794, 3.417.188, 3.064.482 y 2.861.424 vistas en ese orden; con 'sp=CAM%253D' la respuesta no viene ordenada y el HTML pesa menos (1.164.833 bytes frente a 1.192.049), señal de que el filtro se descarto.",
+      "fix": "La constante pasa a valer 'CAM='. requests lo escapa una sola vez y la URL lleva 'sp=CAM%3D', que es lo que YouTube entiende.",
+      "regresion": "tests/test_viral_research.py: la URL preparada con requests contiene 'sp=CAM%3D' y no 'sp=CAM%253D', y la constante no lleva ningun '%'.",
+      "status": "aplicado y verificado",
+      "verificacion": "Suite completa en verde (90 passed). Contra YouTube real, scrape_youtube_results('finanzas personales') y search_viral_videos('finanzas personales', api_key=None) devuelven status='ok' con 6 videos y vistas y fecha en todos ellos. Es la tarea P3 de docs/estado-sesion-actual.json, que queda cerrada."
     }
   ],
   "pipeline_local": {

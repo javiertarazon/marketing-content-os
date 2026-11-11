@@ -4,9 +4,9 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 
 > MVP: API/cola, Spaces privados de voz y guiones, dos notebooks de Colab y publicación en TikTok, Instagram y YouTube mediante Open-Dispatch (MIT). Requiere configurar cuentas, claves y almacenamiento.
 
-## Estado real de preparación end-to-end (18-oct-2026)
+## Estado real de preparación end-to-end (11-nov-2026)
 
-**El producto todavía no está validado como un generador automático de video listo para publicar.** Hay componentes funcionales probados por separado, pero no existe una evidencia reproducible de un video final hecho por el pipeline completo ni de su publicación social.
+**El pipeline completo se ha ejecutado de extremo a extremo en local** (nicho → virales → guion → voz → video → aprobación → encolado de publicación), pero **la publicación social real sigue sin verificarse** porque las cuentas OAuth de TikTok, Instagram y YouTube todavía no están conectadas. Lo que hay es un video final producido por el propio pipeline, con MP4 inspeccionado con ffprobe y con la puerta de aprobación humana verificada contra el scheduler real.
 
 | Etapa | Estado real | Evidencia / límite |
 |---|---|---|
@@ -15,14 +15,14 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 | TTS de catálogo OmniVoice en CPU | Verificado por separado | WAV mono 24 kHz, ~3.48 s, generado en ~39 s en la prueba documentada. Esto no demuestra clonación. |
 | R2 privado | Verificado por separado | Subida, HEAD, descarga firmada temporal y limpieza de archivo de prueba. |
 | Workers Colab | Bucle y panel implementados; sin conexión E2E | Los notebooks hacen polling continuo mientras se ejecutan, pero cada runtime se inicia manualmente. No hay sesión conectada ni trabajo real completado registrado. |
-| Scraping → guion → voz con un trabajo del dashboard | Pendiente de prueba real | La búsqueda depende de indexación pública; no acredita métricas virales ni acceso a todas las redes. |
+| Scraping → guion → voz con un trabajo del dashboard | Verificado en recorrido local | Job de research 36e18c64: virales de YouTube, guion de Qwen (2 min) y voz de OmniVoice (9 min, WAV de 1.820.700 bytes) subido a R2. La búsqueda sigue dependiendo de indexación pública y no acredita métricas virales ni acceso a todas las redes. |
 | Clonación de una voz propia/autorizada | Pendiente | La ruta con muestra WAV y transcripción existe; falta generar y escuchar un resultado con una muestra autorizada. |
-| Render y calidad de MP4 | Pendiente | No hay MP4 final del pipeline inspeccionado en este estado. Resolución/códecs configurados no equivalen a calidad visual validada. |
-| Aprobación y publicación | Publicación automatizada por el scheduler, sin aprobación en el dashboard | El `publisher-service` encola en Open-Dispatch (MIT), que publica en TikTok, Instagram y YouTube; el dashboard sigue sin guardar aprobación ni disparar la publicación al aprobar, y las cuentas OAuth de cada red todavía no están conectadas. Ver «Publicación automática». |
+| Render y calidad de MP4 | Verificado en recorrido local | Job de render 57b28adf: MP4 de 2.728.400 bytes validado con ffprobe (h264, 1080x1920, 30 fps, AAC 48 kHz estéreo, 38,91 s, volumen medio -22,6 dB). ffprobe no evalúa la calidad visual: eso sigue sin inspección humana del fotograma. |
+| Aprobación y publicación | Puerta de aprobación verificada; publicación real pendiente | El dashboard ofrece «Aprobar y publicar» y «Rechazar»: al aprobar, el `publisher-service` encola la unidad en Open-Dispatch (MIT) y el trabajo queda en `approved`; al rechazar no encola nada. Verificado contra el scheduler real (cola de 9 a 10 entradas). Lo que no está verificado es la publicación social real: las cuentas OAuth de cada red siguen sin conectar. Ver «La puerta de aprobación». |
 
-**Siguiente hito aceptable:** una corrida desde el dashboard que quede visible como completa, use voz de catálogo y después voz clonada autorizada, produzca un MP4 reproducible en R2 que se inspeccione visual y auditivamente, y permita una aprobación humana explícita. La publicación seguirá siendo manual hasta integrar y verificar un proveedor y sus cuentas OAuth. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
+**Siguiente hito aceptable:** una corrida desde el dashboard visible como completa que use voz clonada autorizada (hoy solo hay voz de catálogo verificada), con el MP4 inspeccionado visual y auditivamente, y la publicación social real contra las tres redes con sus cuentas OAuth conectadas. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
 
-**Preparación actual:** componentes aislados disponibles; pipeline completo pendiente. No se asigna porcentaje de finalización porque no hay artefacto E2E aceptado que permita medirlo honestamente. Antes de exponer el API o el publisher a Internet, completar la fase de seguridad descrita en la auditoría.
+**Preparación actual:** pipeline completo ejecutado de extremo a extremo en local, con la aprobación humana funcionando y el encolado en el scheduler verificado. No se asigna porcentaje de finalización porque la publicación social real sigue sin verificar por falta de credenciales OAuth. Antes de exponer el API o el publisher a Internet, completar la fase de seguridad descrita en la auditoría.
 
 Auditoría integral vigente de arquitectura, flujo, credenciales, hallazgos y plan de mejora: [docs/auditoria-integral-marketing-content-os.md](./docs/auditoria-integral-marketing-content-os.md). El [plan funcional y de cómputo](./docs/plan-funcionalidad-y-computo.md) detalla correcciones, matriz de pruebas reales, opciones para trabajar sin GPU y el orden para cerrar seguridad. La [auditoría anterior](./docs/auditoria-marketing-content-os.md) conserva las verificaciones históricas del 16 de octubre.
 
@@ -245,7 +245,7 @@ python apps\workers\local_research_worker.py --once --topic "finanzas personales
 python apps\workers\local_render_worker.py --once --verbose
 ```
 
-La búsqueda de vídeos virales funciona **sin `YOUTUBE_API_KEY`**: el extractor lee la página de resultados de YouTube, ordena por número de vistas y devuelve los más vistos. Si la clave está definida, se usa la YouTube Data API oficial con `order=viewCount`, que es más precisa.
+La búsqueda de vídeos virales funciona **sin `YOUTUBE_API_KEY`**: el extractor lee la página de resultados de YouTube, ordena por número de vistas y devuelve los más vistos. Entiende los dos layouts que reparte YouTube (`videoRenderer` y `lockupViewModel`) e interpreta bien los conteos abreviados (`8.6 M` son 8.600.000 vistas, no 86.000.000). Si la clave está definida, se usa la YouTube Data API oficial con `order=viewCount`, que es más precisa.
 
 Los workers locales tienen en cuenta tres diferencias con los notebooks: `API_BASE_URL` admite `http://` (en Colab tiene que ser `https://` porque la salida es a Internet), no se usa `--browser-executable=/usr/bin/chromium` (ruta de Linux) y las rutas `/content` se sustituyen por un directorio temporal escribible.
 

@@ -36,7 +36,12 @@ BROWSER_USER_AGENT = (
 )
 YOUTUBE_RESULTS_URL = "https://www.youtube.com/results"
 # Filtro de popularidad de YouTube: "ordenar por numero de vistas".
-POPULARITY_FILTER = "CAM%3D"
+#
+# El valor va SIN codificar porque ``requests`` ya codifica los parametros de la
+# query. Con la constante anterior (``"CAM%3D"``) se enviava ``sp=CAM%253D``:
+# el "%" se escapaba dos veces, YouTube ignoraba el filtro y devolvia los
+# resultados ordenados por relevancia en vez de por numero de vistas.
+POPULARITY_FILTER = "CAM="
 DEFAULT_LIMIT = 6
 REQUEST_TIMEOUT = (10, 30)
 MAX_TEXT_CHARS = 1200
@@ -70,6 +75,53 @@ _PUBLISHED_PATTERN = r'"publishedTimeText":\{"simpleText":"((?:[^"\\]|\\.)*)"'
 _VIDEO_ID_PATTERN = re.compile(r'"videoId":"([A-Za-z0-9_-]{11})"')
 _WINDOW_CHARS = 9000
 
+# Numero de vistas: separadores de miles o decimal, con sufijo de magnitud opcional.
+_VIEW_COUNT_RE = re.compile(
+    r"(?P<number>\d+(?:[.,\s]\d+)*)\s*"
+    r"(?P<suffix>millones|millón|millones|million|millions|billones|billón|"
+    r"billion|billions|thousands|thousand|mil|M|B|K|k)?"
+    r"(?![A-Za-zÁÉÍÓÚÜÑáéíóúüñ])"
+)
+_VIEW_COUNT_SUFFIXES = {
+    "millones": 1_000_000,
+    "millón": 1_000_000,
+    "million": 1_000_000,
+    "millions": 1_000_000,
+    "billones": 1_000_000_000,
+    "billón": 1_000_000_000,
+    "billion": 1_000_000_000,
+    "billions": 1_000_000_000,
+    "thousands": 1_000,
+    "thousand": 1_000,
+    "mil": 1_000,
+    "M": 1_000_000,
+    "B": 1_000_000_000,
+    "K": 1_000,
+    "k": 1_000,
+}
+
+# Fechas relativas de YouTube en espanol. Las abreviaturas se han medido contra
+# la fecha real de publicacion (uploadDate de la pagina de watch): "hace 10 a"
+# son 10 anos, "hace 3 m" son 3 meses y "hace 2 sem." son 2 semanas.
+# El valor es la duracion aproximada de la unidad en dias.
+_RELATIVE_TIME_UNITS: tuple[tuple[str, float], ...] = (
+    (r"segundos?", 1 / 86400),
+    (r"minutos?", 1 / 1440),
+    (r"min", 1 / 1440),
+    (r"horas?", 1 / 24),
+    (r"h", 1 / 24),
+    (r"días?", 1.0),
+    (r"dias?", 1.0),
+    (r"d", 1.0),
+    (r"semanas?", 7.0),
+    (r"sem\.", 7.0),
+    (r"meses?", 30.44),
+    (r"años?", 365.25),
+    (r"anos?", 365.25),
+    (r"a", 365.25),
+    (r"m", 30.44),
+)
+
 
 def _matches_platform(url: str, platform: str) -> bool:
     """Indica si una URL pertenece a los dominios publicos de la plataforma."""
@@ -102,60 +154,93 @@ def _first_match(patterns: Iterable[str], window: str) -> str | None:
 
 
 def parse_view_count(text: str | None) -> int | None:
-    """Convierte un texto de vistas ("1.234.567 de vistas", "12K views") en un entero."""
+    """Convierte un texto de vistas ("1.234.567 de vistas", "8.6 M") en un entero.
+
+    YouTube escribe las vistas de dos formas según el layout:
+
+    - **Conteo exacto**: ``"8,259,754 vistas"`` o ``"8.259.754 vistas"``, donde los
+      separadores son de miles.
+    - **Conteo abreviado**: ``"8.6 M"``, ``"8,6 M"``, ``"2 M"``, ``"12K views"``,
+      ``"701 mil vistas"``, ``"4,4 millones de vistas"``. Aqui los separadores son
+      decimales y el sufijo indica la magnitud.
+
+    Antes este parser multiplicaba ``"8.6 M"`` por un millon (``86.000.000`` en vez
+    de ``8.600.000``) porque se comia el punto como separador de miles.
+    """
     if not text:
         return None
-    normalized = text.replace("\u00a0", " ").strip()
-    multiplier = 1
-    suffix_match = re.search(r"([\d.,\s]+)\s*([KMB])\b", normalized, flags=re.IGNORECASE)
-    if suffix_match:
-        multiplier = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}[
-            suffix_match.group(2).upper()
-        ]
-        digits = suffix_match.group(1)
-    else:
-        digits_match = re.search(r"(\d[\d.,\s]*)", normalized)
-        if not digits_match:
+    normalized = text.replace("\u00a0", " ").replace("\u202f", " ").strip()
+    match = _VIEW_COUNT_RE.search(normalized)
+    if not match:
+        return None
+
+    number_text = match.group("number")
+    suffix = match.group("suffix")
+    if suffix is None:
+        # Conteo exacto: todos los separadores son de miles.
+        digits = re.sub(r"[^\d]", "", number_text)
+        if not digits:
             return None
-        digits = digits_match.group(1)
-    cleaned = re.sub(r"[^\d]", "", digits)
-    if not cleaned:
+        return int(digits)
+
+    multiplier = _VIEW_COUNT_SUFFIXES[suffix]
+    value = _parse_decimal_amount(number_text)
+    if value is None:
         return None
-    try:
-        return int(cleaned) * multiplier
-    except ValueError:
+    return int(round(value * multiplier))
+
+
+def _parse_decimal_amount(number_text: str) -> float | None:
+    """Interpreta ``"8.6"``, ``"8,6"``, ``"12"`` o ``"1,234"`` como cantidad decimal.
+
+    Con sufijo de magnitud, un unico separador con tres digitos detrás es de miles
+    (``1,234`` -> 1234) y en cualquier otro caso es decimal (``8,6`` -> 8.6).
+    """
+    cleaned = number_text.replace(" ", "")
+    parts = re.split(r"[.,]", cleaned)
+    if not parts or not parts[0].isdigit():
         return None
+    if len(parts) == 1:
+        return float(parts[0])
+    if len(parts) > 2:
+        # Varios grupos: todos son separadores de miles.
+        digits = re.sub(r"[^\d]", "", cleaned)
+        return float(digits) if digits else None
+    whole, fraction = parts
+    if len(fraction) == 3:
+        digits = re.sub(r"[^\d]", "", cleaned)
+        return float(digits) if digits else None
+    if not fraction.isdigit():
+        return None
+    return float(f"{whole}.{fraction}")
+
 
 
 def _parse_relative_time(text: str | None) -> str | None:
-    """Convierte "hace 3 meses" / "3 months ago" en una marca ISO aproximada."""
+    """Convierte "hace 3 meses" / "hace 10 a" en una marca ISO aproximada.
+
+    YouTube escribe las fechas relativas en espanol de forma abreviada. Las
+    abreviaturas se han medido contra la fecha real de publicacion de cada video
+    (``uploadDate`` de la pagina de watch): ``"hace 10 a"`` son 10 anos,
+    ``"hace 3 m"`` son 3 meses y ``"hace 2 sem."`` son 2 semanas.
+
+    Devuelve ``None`` si el texto no contiene ninguna cantidad reconocible.
+    """
     if not text:
         return None
     lowered = text.lower()
-    units = {
-        "segundo": "seconds",
-        "minuto": "minutes",
-        "hora": "hours",
-        "día": "days",
-        "dia": "days",
-        "semana": "weeks",
-        "mes": "months",
-        "año": "days",
-        "ano": "days",
-    }
-    for spanish, english in units.items():
-        match = re.search(rf"(\d+)\s*{spanish}", lowered)
+    for pattern, days_per_unit in _RELATIVE_TIME_UNITS:
+        match = re.search(
+            rf"(\d+)\s*{pattern}(?![A-Za-zÁÉÍÓÚÜÑáéíóúüñ])",
+            lowered,
+        )
         if not match:
             continue
         amount = int(match.group(1))
-        if english == "days" and "año" in lowered or english == "days" and "ano" in lowered:
-            delta = timedelta(days=365 * amount)
-        elif english == "days":
-            delta = timedelta(days=amount)
-        else:
-            delta = timedelta(**{english: amount})
+        delta = timedelta(days=amount * days_per_unit)
         return (datetime.now(timezone.utc) - delta).isoformat().replace("+00:00", "Z")
     return None
+
 
 
 def _source(
@@ -208,7 +293,7 @@ def scrape_youtube_results(
         }
 
     html = response.text
-    sources = _extract_sources_from_html(html)
+    sources = extract_sources_from_html(html)
     if not sources:
         return [], {
             "platform": "youtube",
@@ -241,7 +326,11 @@ def scrape_youtube_results(
 
 
 def _extract_sources_from_html(html: str) -> list[dict[str, Any]]:
-    """Extrae las fuentes del HTML de resultados con expresiones regulares."""
+    """Extrae las fuentes del HTML de resultados con expresiones regulares.
+
+    Es la via heredada: se queda como respaldo para cuando la pagina no trae
+    ``ytInitialData`` legible. La via principal es :func:`extract_sources_from_html`.
+    """
     sources: list[dict[str, Any]] = []
     seen: set[str] = set()
     for match in _VIDEO_ID_PATTERN.finditer(html):
@@ -260,6 +349,235 @@ def _extract_sources_from_html(html: str) -> list[dict[str, Any]]:
             _source(title, video_id, channel, parse_view_count(views_text), published_at)
         )
     return sources
+
+
+# ---------------------------------------------------------------------------
+# Extraccion estructural desde ``ytInitialData``
+# ---------------------------------------------------------------------------
+#
+# YouTube sirve los resultados de busqueda en dos layouts distintos y los
+# reparte de forma aleatoria entre peticiones:
+#
+# - **videoRenderer**: ``title.runs[0].text`` y ``viewCountText.simpleText``.
+# - **lockupViewModel**: ``metadata.lockupMetadataViewModel.title.content`` y las
+#   vistas/fecha en ``metadata.contentMetadataViewModel.metadataRows``.
+#
+# El extractor anterior solo entendia el primer layout, asi que cuando YouTube
+# servia el segundo el worker no encontraba ningun titulo y devolvia
+# ``no_results`` (probabilidad medida: 1 de cada 25 a 40 peticiones).
+
+
+def _iter_nodes(node: Any, key: str) -> Iterable[dict[str, Any]]:
+    """Recorre el arbol JSON y devuelve todos los nodos con la clave indicada."""
+    if isinstance(node, dict):
+        for name, value in node.items():
+            if name == key and isinstance(value, dict):
+                yield value
+            yield from _iter_nodes(value, key)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_nodes(item, key)
+
+
+def _text_of(node: Any) -> str:
+    """Devuelve el texto de un nodo de YouTube con cualquiera de sus formas.
+
+    Acepta ``{"runs": [{"text": ...}]}``, ``{"simpleText": ...}`` y
+    ``{"content": ...}``.
+    """
+    if isinstance(node, str):
+        return node.strip()
+    if not isinstance(node, dict):
+        return ""
+    if "simpleText" in node and isinstance(node["simpleText"], str):
+        return node["simpleText"].strip()
+    if "content" in node and isinstance(node["content"], str):
+        return node["content"].strip()
+    runs = node.get("runs")
+    if isinstance(runs, list):
+        for run in runs:
+            if isinstance(run, dict) and isinstance(run.get("text"), str):
+                return run["text"].strip()
+    return ""
+
+
+def _source_from_video_renderer(renderer: dict[str, Any]) -> dict[str, Any] | None:
+    """Construye una fuente a partir de un ``videoRenderer``."""
+    video_id = renderer.get("videoId")
+    title = _text_of(renderer.get("title"))
+    if not isinstance(video_id, str) or not video_id or not title:
+        return None
+    views_text = _text_of(renderer.get("viewCountText")) or _text_of(
+        renderer.get("shortViewCountText")
+    )
+    channel = _text_of(renderer.get("ownerText")) or _text_of(
+        renderer.get("longBylineText")
+    )
+    published_at = _parse_relative_time(_text_of(renderer.get("publishedTimeText")))
+    return _source(
+        title, video_id, channel, parse_view_count(views_text), published_at
+    )
+
+
+def _lockup_metadata_parts(lockup: dict[str, Any]) -> list[dict[str, Any]]:
+    """Devuelve las partes de metadatos de un ``lockupViewModel``."""
+    metadata = lockup.get("metadata")
+    if not isinstance(metadata, dict):
+        return []
+    view_model = metadata.get("lockupMetadataViewModel")
+    if not isinstance(view_model, dict):
+        return []
+    inner = view_model.get("metadata")
+    if not isinstance(inner, dict):
+        return []
+    content = inner.get("contentMetadataViewModel")
+    if not isinstance(content, dict):
+        return []
+    rows = content.get("metadataRows")
+    if not isinstance(rows, list):
+        return []
+    parts: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for part in row.get("metadataParts") or []:
+            if isinstance(part, dict):
+                parts.append(part)
+    return parts
+
+
+def _source_from_lockup(lockup: dict[str, Any]) -> dict[str, Any] | None:
+    """Construye una fuente a partir de un ``lockupViewModel``."""
+    video_id = lockup.get("contentId")
+    metadata = lockup.get("metadata")
+    if not isinstance(video_id, str) or not video_id or not isinstance(metadata, dict):
+        return None
+    view_model = metadata.get("lockupMetadataViewModel")
+    if not isinstance(view_model, dict):
+        return None
+    title = _text_of(view_model.get("title"))
+    if not title:
+        return None
+
+    channel = ""
+    views_text = ""
+    published_text = ""
+    for part in _lockup_metadata_parts(lockup):
+        accessibility = part.get("accessibilityLabel")
+        accessibility = accessibility if isinstance(accessibility, str) else ""
+        text = _text_of(part.get("text"))
+        avatar = part.get("avatarStack")
+        if isinstance(avatar, dict):
+            stack = avatar.get("avatarStackViewModel")
+            if isinstance(stack, dict):
+                channel = _text_of(stack.get("text")) or channel
+            continue
+        lowered = accessibility.lower()
+        if "vistas" in lowered or "views" in lowered:
+            # La etiqueta de accesibilidad trae la forma larga ("8.6 millones de
+            # vistas"), que no depende de las abreviaturas por idioma.
+            views_text = accessibility or views_text
+        elif lowered.startswith("hace") or lowered.startswith("transmitido"):
+            published_text = accessibility or published_text
+        elif not published_text and text.lower().startswith(("hace", "transmitido")):
+            published_text = text
+
+    return _source(
+        title,
+        video_id,
+        channel,
+        parse_view_count(views_text),
+        _parse_relative_time(published_text),
+    )
+
+
+def extract_sources_from_initial_data(payload: Any) -> list[dict[str, Any]]:
+    """Extrae las fuentes de los resultados de busqueda de ``ytInitialData``.
+
+    Acepta el diccionario ya parseado o su texto JSON. Reconoce los dos layouts
+    que usa YouTube (``videoRenderer`` y ``lockupViewModel``) y descarta los
+    videos repetidos, que YouTube devuelve cuando el titulo tiene version
+    traducida.
+    """
+    if isinstance(payload, (str, bytes)):
+        try:
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            return []
+    if not isinstance(payload, dict):
+        return []
+
+    sources: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for renderer in _iter_nodes(payload, "videoRenderer"):
+        source = _source_from_video_renderer(renderer)
+        if source is None:
+            continue
+        video_id = source["url"].rsplit("=", 1)[-1]
+        if video_id in seen:
+            continue
+        seen.add(video_id)
+        sources.append(source)
+    for lockup in _iter_nodes(payload, "lockupViewModel"):
+        source = _source_from_lockup(lockup)
+        if source is None:
+            continue
+        video_id = source["url"].rsplit("=", 1)[-1]
+        if video_id in seen:
+            continue
+        seen.add(video_id)
+        sources.append(source)
+    return sources
+
+
+def extract_initial_data(html: str) -> dict[str, Any] | None:
+    """Extrae y parsea el bloque JSON ``ytInitialData`` de la pagina de resultados."""
+    index = html.find("var ytInitialData = ")
+    if index == -1:
+        return None
+    start = html.find("{", index)
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for position in range(start, len(html)):
+        character = html[position]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(html[start : position + 1])
+                except ValueError:
+                    return None
+    return None
+
+
+def extract_sources_from_html(html: str) -> list[dict[str, Any]]:
+    """Extrae las fuentes de la pagina de resultados de YouTube.
+
+    Usa la estructura ``ytInitialData`` cuando esta disponible (es lo normal) y
+    recurre al extractor por expresiones regulares como respaldo.
+    """
+    initial_data = extract_initial_data(html)
+    if initial_data is not None:
+        sources = extract_sources_from_initial_data(initial_data)
+        if sources:
+            return sources
+    return _extract_sources_from_html(html)
+
 
 
 def search_youtube_videos_api(

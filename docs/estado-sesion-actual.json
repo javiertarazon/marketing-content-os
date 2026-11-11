@@ -1,10 +1,10 @@
 {
   "_meta": {
     "proposito": "Resumen compacto de la sesion para retomar en otro chat sin releer todo el historico. El detalle exhaustivo esta en docs/estado-y-trazabilidad-marketing-content-os.json (manifiesto) y en docs/auditoria-2026-11.md.",
-    "fecha": "2026-11-08",
+    "fecha": "2026-11-11",
     "repo": "D:/proyectos_javier/marketing-content-os",
     "remoto": "https://github.com/javiertarazon/marketing-content-os.git (PUBLICO)",
-    "ultimo_commit": "27187d1 + este commit (cierre de la sesion)",
+    "ultimo_commit": "8cc4d52 + este commit (arreglos E2E-08..E2E-11 del extractor de YouTube)",
     "reglas_de_trabajo": "AGENTS.md en la raiz: idioma espanol, verificar por ejecucion, trazabilidad, pruebas obligatorias, git, PowerShell, Docker."
   },
   "objetivo": "Dejar el proyecto funcional al 100% y poder ejecutar el pipeline completo (nicho -> virales -> idea/gancho -> guion -> voz -> video -> aprobacion -> publicacion) probando modulo a modulo en esta maquina.",
@@ -78,6 +78,13 @@
       "que": "Los workers no se podian ejecutar con su ruta porque hacian 'from apps.workers import ...' y sys.path[0] es el directorio del modulo.",
       "fix": "Bootstrap de sys.path con la raiz del repo en los dos workers.",
       "commit": "76f7f97"
+    },
+    {
+      "id": "E2E-11",
+      "sev": "P2",
+      "que": "El filtro de popularidad se enviaba doblemente codificado: la constante era 'CAM%3D' y requests lo escapaba otra vez, asi que la URL llevaba 'sp=CAM%253D'. YouTube ignoraba el filtro y no ordenaba por numero de vistas.",
+      "fix": "La constante pasa a 'CAM=' y requests la escapa una sola vez, de modo que la URL lleva 'sp=CAM%3D'. Con eso el worker deja de devolver 'no_results'.",
+      "commit": "pendiente"
     }
   ],
   "tareas_pendientes": [
@@ -105,9 +112,9 @@
     {
       "id": "P3",
       "tarea": "Arreglar la busqueda de virales dentro del worker (no_results)",
-      "estado": "PENDIENTE",
+      "estado": "COMPLETADO",
       "dueno": "agente",
-      "detalle": "En el worker la consulta fue GET /results con search_query=finanzas+personales y sp=CAM%253D y devolvio no_results, mientras que la funcion aislada si devuelve 6 resultados. Revisar el doble codificado del parametro sp y el User-Agent en apps/workers/viral_research.py."
+      "detalle": "Cerrada. La causa era doble: (1) el extractor solo entendia el layout videoRenderer y devolvia 'no_results' cuando YouTube servia lockupViewModel (E2E-08), y (2) el filtro de popularidad viajava doblemente codificado y YouTube lo ignoraba (E2E-11). Verificado contra YouTube real: search_viral_videos('finanzas personales', api_key=None) devuelve status='ok' con 6 videos ordenados por vistas, con canal y fecha en todos ellos."
     },
     {
       "id": "P4",
