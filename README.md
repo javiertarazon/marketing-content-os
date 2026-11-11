@@ -6,7 +6,9 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 
 ## Estado real de preparación end-to-end (11-nov-2026)
 
-**El pipeline completo se ha ejecutado de extremo a extremo en local** (nicho → virales → guion → voz → video → aprobación → encolado de publicación), pero **la publicación social real sigue sin verificarse** porque las cuentas OAuth de TikTok, Instagram y YouTube todavía no están conectadas. Lo que hay es un video final producido por el propio pipeline, con MP4 inspeccionado con ffprobe y con la puerta de aprobación humana verificada contra el scheduler real.
+**El pipeline completo se ejecutó de extremo a extremo en local el 8-nov-2026** (research → guion → voz → render → aprobación → publicación encolada), con el MP4 real subido a R2 y validado con ffprobe. Lo que **no** está verificado es la publicación social real: las cuentas OAuth de las tres redes siguen sin conectar.
+
+La auditoría del 9-nov-2026 encontró y corrigió 32 defectos (6 P0, 7 P1, 16 P2, 5 P3). Quedan **dos problemas de seguridad sin corregir por decisión explícita del usuario**: la puerta de aprobación (`/approve`, `/reject`) y la ruta de publicación del publisher no exigen token. Ver «Autenticación pendiente». El detalle está en [docs/auditoria-2026-11-09.md](./docs/auditoria-2026-11-09.md).
 
 | Etapa | Estado real | Evidencia / límite |
 |---|---|---|
@@ -18,13 +20,15 @@ Plataforma modular para coordinar investigacion, generacion multimedia, renderiz
 | Scraping → guion → voz con un trabajo del dashboard | Verificado en recorrido local | Job de research 36e18c64: virales de YouTube, guion de Qwen (2 min) y voz de OmniVoice (9 min, WAV de 1.820.700 bytes) subido a R2. La búsqueda sigue dependiendo de indexación pública y no acredita métricas virales ni acceso a todas las redes. |
 | Clonación de una voz propia/autorizada | Pendiente | La ruta con muestra WAV y transcripción existe; falta generar y escuchar un resultado con una muestra autorizada. |
 | Render y calidad de MP4 | Verificado en recorrido local | Job de render 57b28adf: MP4 de 2.728.400 bytes validado con ffprobe (h264, 1080x1920, 30 fps, AAC 48 kHz estéreo, 38,91 s, volumen medio -22,6 dB). ffprobe no evalúa la calidad visual: eso sigue sin inspección humana del fotograma. |
-| Aprobación y publicación | Puerta de aprobación verificada; publicación real pendiente | El dashboard ofrece «Aprobar y publicar» y «Rechazar»: al aprobar, el `publisher-service` encola la unidad en Open-Dispatch (MIT) y el trabajo queda en `approved`; al rechazar no encola nada. Verificado contra el scheduler real (cola de 9 a 10 entradas). Lo que no está verificado es la publicación social real: las cuentas OAuth de cada red siguen sin conectar. Ver «La puerta de aprobación». |
+| Aprobación y publicación | Puerta de aprobación humana implementada y verificada; publicación real pendiente | El render deja el video en `awaiting_approval`; al aprobar, el `publisher-service` encola en Open-Dispatch (MIT) para TikTok, Instagram y YouTube. El recorrido del 8-nov-2026 encoló la unidad f8d8f5a3… en la cola real. Lo que falta son las credenciales OAuth de cada red. Ver «La puerta de aprobación». |
+| Autenticación de la publicación | **Pendiente por decisión del usuario** | `POST /v1/jobs/{id}/approve`, `POST /v1/jobs/{id}/reject` y `POST /v1/publish` no exigen token. Probado: un dispatch sin credencial llega al scheduler. Decisión del 9-nov-2026: se aplaza hasta que el resto esté cerrado. Detalle en AU-01 y AU-02 del manifiesto y en la nota de autenticación al final de la sección de la CI. |
+| CI | Bloqueada por la cuenta de GitHub; los tres bloqueadores del repositorio ya están corregidos | 14 runs, ninguno verde. La causa externa es la facturación. Además, el workflow tenía tres fallos propios ya arreglados: `actionlint` antes del `checkout`, un conflicto de dependencias irresoluble y las imágenes de MinIO retiradas de Docker Hub. |
 
-**Siguiente hito aceptable:** una corrida desde el dashboard visible como completa que use voz clonada autorizada (hoy solo hay voz de catálogo verificada), con el MP4 inspeccionado visual y auditivamente, y la publicación social real contra las tres redes con sus cuentas OAuth conectadas. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
+**Siguiente hito aceptable:** una corrida desde el dashboard que use voz clonada autorizada (hoy solo hay voz de catálogo verificada), produzca un MP4 reproducible en R2 que se inspeccione visual y auditivamente, y llegue a publicarse de verdad en alguna de las tres redes. El proveedor ya está integrado y verificado (Open-Dispatch, MIT); lo que falta son las credenciales OAuth de cada red. Colab gratuito exige arrancar el runtime manualmente y puede desconectarlo; ningún dashboard local puede garantizar que ese runtime permanezca disponible.
 
-**Preparación actual:** pipeline completo ejecutado de extremo a extremo en local, con la aprobación humana funcionando y el encolado en el scheduler verificado. No se asigna porcentaje de finalización porque la publicación social real sigue sin verificar por falta de credenciales OAuth. Antes de exponer el API o el publisher a Internet, completar la fase de seguridad descrita en la auditoría.
+**Preparación actual:** pipeline completo ejecutado y verificado en local; publicación social real pendiente de credenciales. Antes de exponer el API o el publisher a Internet, cerrar la fase de autenticación pendiente: el nginx ya tiene límite de ritmo, timeouts y tamaño máximo de cuerpo, y las redes del compose están segmentadas, pero **las rutas que disparan la publicación siguen abiertas**.
 
-Auditoría integral vigente de arquitectura, flujo, credenciales, hallazgos y plan de mejora: [docs/auditoria-integral-marketing-content-os.md](./docs/auditoria-integral-marketing-content-os.md). El [plan funcional y de cómputo](./docs/plan-funcionalidad-y-computo.md) detalla correcciones, matriz de pruebas reales, opciones para trabajar sin GPU y el orden para cerrar seguridad. La [auditoría anterior](./docs/auditoria-marketing-content-os.md) conserva las verificaciones históricas del 16 de octubre.
+Auditoría más reciente (9-nov-2026, con verificación por ejecución y las correcciones aplicadas): [docs/auditoria-2026-11-09.md](./docs/auditoria-2026-11-09.md). Auditoría integral previa de arquitectura, flujo, credenciales, hallazgos y plan de mejora: [docs/auditoria-integral-marketing-content-os.md](./docs/auditoria-integral-marketing-content-os.md). El [plan funcional y de cómputo](./docs/plan-funcionalidad-y-computo.md) detalla correcciones, matriz de pruebas reales, opciones para trabajar sin GPU y el orden para cerrar seguridad. La [auditoría anterior](./docs/auditoria-marketing-content-os.md) conserva las verificaciones históricas del 16 de octubre.
 
 Para retomar el desarrollo desde el estado verificado, consulta el [manifiesto JSON de estado y trazabilidad](./docs/estado-y-trazabilidad-marketing-content-os.json): inventario de módulos, flujo, repositorios, variables de configuración (sin valores secretos), correcciones, pruebas, límites conocidos y próximos pasos para agentes.
 
@@ -196,13 +200,23 @@ El publicador usa la API real de Mixpost (`GET /workspaces`, `GET /{workspace}/a
 Mixpost Lite sirve la API y la UI bajo el prefijo `/mixpost` (`MIXPOST_CORE_PATH`), por eso las URLs terminan en `/mixpost/api`.
 
 
-### La CI no arranca: la cuenta de GitHub está bloqueada por facturación
+### La CI no arranca: la cuenta está bloqueada por facturación (y había tres fallos más en el repo)
 
 Este repositorio es **público** desde el 6-nov-2026 (antes de hacerlo se auditó el historial completo: 79 blobs, cero secretos, cero firmas de credenciales). Aun así, la CI no ejecuta ni un paso, y GitHub lo dice explícitamente en la anotación del job:
 
 > **The job was not started because your account is locked due to a billing issue.**
 
 El workflow **es válido** (`actionlint v1.7.12` pasa sin avisos) y **se reconoce y construye el job** (`Notebook CI` → job `test`), pero ningún runner lo arranca: `runner_id: 0`, `steps: []` y 2 s de duración total. Eso no es un problema del repositorio: es la **cuenta bloqueada por saldo impagado**, y arrastra a Actions entero con independencia de la visibilidad del repo.
+
+**Ojo: esa no era la única causa.** La auditoría del 9-nov-2026 encontró **tres bloqueadores más dentro del propio repositorio**, que habrían hecho fallar la CI aunque la cuenta estuviera desbloqueada. Los tres están corregidos en la rama `fix/auditoria-2026-11-09`:
+
+| # | Qué pasaba | Por qué rompía la CI | Ahora |
+|---|---|---|---|
+| 1 | El paso de `actionlint` estaba **antes** de `actions/checkout` | Sin el repo en disco, `actionlint` recibía la ruta literal y salía con código 3: el job moría en el paso 1 y **ningún** check posterior llegaba a ejecutarse | El checkout va primero; `actionlint` valida de verdad |
+| 2 | `gradio_client>=1.4,<2` (API) contra `gradio_client>=2,<3` (adaptadores) | El paso «Install dependencies» era **irresoluble**: `requirements are unsatisfiable` | Se quita el pin de la API (nadie en `apps/api` lo importa) y se alinean los workers |
+| 3 | El compose pedía `minio/minio` y `minio/mc` | MinIO borró sus repos de Docker Hub el 11-sep-2026: ambas devuelven `401` (pull denied) y el stack no levanta | Se usan las imágenes de la comunidad `pgsty`, fijadas a versión |
+
+Además, el servicio `docker:24.0-dind` hacía que los puertos del compose quedaran en el namespace del contenedor dind y **no** en el `127.0.0.1` del runner, así que el healthcheck y el smoke test no alcanzaban el stack. Se eliminó: el runner de GitHub ya trae el daemon de Docker.
 
 Qué hacer:
 
@@ -213,7 +227,9 @@ Qué hacer:
 
 Cómo se llegó al diagnóstico, por si hay que repetirlo: con el repositorio todavía privado, los runs morían con `workflow name` vacío, `path` `BuildFailed`, `conclusion` `startup_failure`, `jobs: 0` y sin logs. Eso se reprodujo **igual** con un workflow mínimo de tres líneas, lo que descartó YAML, runner, secrets y reusable workflows; `actionlint` confirmó que el fichero era válido. Al pasarlo a público, GitHub pasó a reconocer el workflow y a construir el job, y la anotación del check-run dio la causa exacta.
 
-Este repo sí tenía un bug real de workflow, heredado del original: `privileged: true` no es una clave válida dentro de `services:` (las válidas son `credentials`, `env`, `image`, `options`, `ports`, `volumes`), así que su CI nunca llegó a ejecutar. Corregido a `options: --tls=false --privileged`, y la CI ahora ejecuta `actionlint` para que un workflow inválido falle en el runner y no se descubra en el primer push real.
+Este repo sí tenía un bug real de workflow, heredado del original: `privileged: true` no es una clave válida dentro de `services:` (las válidas son `credentials`, `env`, `image`, `options`, `ports`, `volumes`), así que su CI nunca llegó a ejecutar. Corregido a `options: --tls=false --privileged`, y la CI ahora ejecuta `actionlint` —**después** del checkout, para que de verdad valide los workflows del repositorio y no muera en el primer paso.
+
+> **Autenticación pendiente (decisión del usuario, 9-nov-2026).** La puerta de aprobación (`POST /v1/jobs/{id}/approve` y `/reject`) y la ruta de publicación del publisher (`POST /v1/publish`) **no exigen token**: se comprobó que una petición sin credencial llega al scheduler y encola la publicación. Se deja así a propósito hasta que el resto esté cerrado y se solicite; la decisión y sus implicaciones están en AU-01, AU-02 y D1 del manifiesto.
 
 ## Progreso del pipeline y medios locales
 

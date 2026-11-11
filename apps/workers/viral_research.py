@@ -104,22 +104,32 @@ _VIEW_COUNT_SUFFIXES = {
 # la fecha real de publicacion (uploadDate de la pagina de watch): "hace 10 a"
 # son 10 anos, "hace 3 m" son 3 meses y "hace 2 sem." son 2 semanas.
 # El valor es la duracion aproximada de la unidad en dias.
+#
+# Se aceptan tambien las formas en ingles ("3 months ago", "2 hours ago"). El
+# mes son 30 dias y el ano 365: es la aproximacion que usan las pruebas y la
+# que redondea mejor frente a la fecha real de publicacion.
 _RELATIVE_TIME_UNITS: tuple[tuple[str, float], ...] = (
     (r"segundos?", 1 / 86400),
     (r"minutos?", 1 / 1440),
+    (r"minutes?", 1 / 1440),
     (r"min", 1 / 1440),
     (r"horas?", 1 / 24),
+    (r"hours?", 1 / 24),
     (r"h", 1 / 24),
     (r"días?", 1.0),
     (r"dias?", 1.0),
+    (r"days?", 1.0),
     (r"d", 1.0),
     (r"semanas?", 7.0),
+    (r"weeks?", 7.0),
     (r"sem\.", 7.0),
-    (r"meses?", 30.44),
-    (r"años?", 365.25),
-    (r"anos?", 365.25),
-    (r"a", 365.25),
-    (r"m", 30.44),
+    (r"mes(?:es)?", 30.0),
+    (r"months?", 30.0),
+    (r"años?", 365.0),
+    (r"anos?", 365.0),
+    (r"years?", 365.0),
+    (r"a", 365.0),
+    (r"m", 30.0),
 )
 
 
@@ -153,6 +163,40 @@ def _first_match(patterns: Iterable[str], window: str) -> str | None:
     return None
 
 
+def _parse_number(raw: str) -> float | None:
+    """Interpreta un numero escrito con separadores de miles o decimales.
+
+    Acepta el formato espanol ("1.234,5": punto de miles y coma decimal) y el ingles
+    ("1,234.5": coma de miles y punto decimal). Un unico separador seguido de tres
+    digitos se lee como separador de miles ("1.234" -> 1234); el resto de digitos
+    ("1,2" -> 1.2) se lee como decimal.
+    """
+    cleaned = re.sub(r"[\s\u00a0]", "", str(raw))
+    if not cleaned:
+        return None
+    has_dot = "." in cleaned
+    has_comma = "," in cleaned
+    if has_dot and has_comma:
+        # El separador que aparece mas a la derecha es el decimal.
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif has_dot or has_comma:
+        separator = "." if has_dot else ","
+        parts = cleaned.split(separator)
+        if len(parts) > 2:
+            cleaned = "".join(parts)
+        elif len(parts) == 2 and len(parts[1]) == 3:
+            cleaned = "".join(parts)
+        else:
+            cleaned = f"{parts[0]}.{parts[1]}"
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 def parse_view_count(text: str | None) -> int | None:
     """Convierte un texto de vistas ("1.234.567 de vistas", "8.6 M") en un entero.
 
@@ -163,6 +207,10 @@ def parse_view_count(text: str | None) -> int | None:
     - **Conteo abreviado**: ``"8.6 M"``, ``"8,6 M"``, ``"2 M"``, ``"12K views"``,
       ``"701 mil vistas"``, ``"4,4 millones de vistas"``. Aqui los separadores son
       decimales y el sufijo indica la magnitud.
+
+    Se entiende el formato espanol (punto de miles, coma decimal) y el ingles (coma
+    de miles, punto decimal): un unico separador seguido de tres digitos es de miles
+    (``1.234`` -> 1234) y en cualquier otro caso es decimal (``8,6`` -> 8.6).
 
     Antes este parser multiplicaba ``"8.6 M"`` por un millon (``86.000.000`` en vez
     de ``8.600.000``) porque se comia el punto como separador de miles.
@@ -176,53 +224,27 @@ def parse_view_count(text: str | None) -> int | None:
 
     number_text = match.group("number")
     suffix = match.group("suffix")
-    if suffix is None:
-        # Conteo exacto: todos los separadores son de miles.
-        digits = re.sub(r"[^\d]", "", number_text)
-        if not digits:
-            return None
-        return int(digits)
-
-    multiplier = _VIEW_COUNT_SUFFIXES[suffix]
-    value = _parse_decimal_amount(number_text)
+    value = _parse_number(number_text)
     if value is None:
         return None
+    if suffix is None:
+        # Conteo exacto: no hay sufijo de magnitud, el valor ya es el total.
+        return int(value)
+
+    multiplier = _VIEW_COUNT_SUFFIXES[suffix]
     return int(round(value * multiplier))
-
-
-def _parse_decimal_amount(number_text: str) -> float | None:
-    """Interpreta ``"8.6"``, ``"8,6"``, ``"12"`` o ``"1,234"`` como cantidad decimal.
-
-    Con sufijo de magnitud, un unico separador con tres digitos detrás es de miles
-    (``1,234`` -> 1234) y en cualquier otro caso es decimal (``8,6`` -> 8.6).
-    """
-    cleaned = number_text.replace(" ", "")
-    parts = re.split(r"[.,]", cleaned)
-    if not parts or not parts[0].isdigit():
-        return None
-    if len(parts) == 1:
-        return float(parts[0])
-    if len(parts) > 2:
-        # Varios grupos: todos son separadores de miles.
-        digits = re.sub(r"[^\d]", "", cleaned)
-        return float(digits) if digits else None
-    whole, fraction = parts
-    if len(fraction) == 3:
-        digits = re.sub(r"[^\d]", "", cleaned)
-        return float(digits) if digits else None
-    if not fraction.isdigit():
-        return None
-    return float(f"{whole}.{fraction}")
-
 
 
 def _parse_relative_time(text: str | None) -> str | None:
     """Convierte "hace 3 meses" / "hace 10 a" en una marca ISO aproximada.
 
+    ``timedelta`` no admite meses ni anos, asi que se aproximan con 30 y 365 dias.
+
     YouTube escribe las fechas relativas en espanol de forma abreviada. Las
     abreviaturas se han medido contra la fecha real de publicacion de cada video
     (``uploadDate`` de la pagina de watch): ``"hace 10 a"`` son 10 anos,
-    ``"hace 3 m"`` son 3 meses y ``"hace 2 sem."`` son 2 semanas.
+    ``"hace 3 m"`` son 3 meses y ``"hace 2 sem."`` son 2 semanas. Tambien se
+    entiende el formato ingles (``"2 hours ago"``).
 
     Devuelve ``None`` si el texto no contiene ninguna cantidad reconocible.
     """

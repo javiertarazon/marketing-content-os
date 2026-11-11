@@ -13,30 +13,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    services:
-      docker:
-        image: docker:24.0-dind
-        # 'privileged' no es una clave valida en 'services': GitHub rechaza el
-        # workflow entero si aparece ahi. ElEquivalent es --privileged dentro
-        # de 'options'.
-        options: --tls=false --privileged
-        ports:
-          - 2375:2375
-    env:
-      DOCKER_HOST: tcp://localhost:2375
+    # NO se declara un servicio "docker:24.0-dind": el runner hospedado de
+    # GitHub ya trae el daemon de Docker instalado y en marcha, y es ese daemon
+    # nativo el que publica los puertos del compose en el 127.0.0.1 del runner.
+    # Con dind, "docker compose up" publicaba 8000/9000/5432 en el espacio de
+    # nombres del contenedor dind (no en el del runner), de modo que el
+    # healthcheck, API_BASE_URL y S3_ENDPOINT_URL no alcanzaban el stack; ademas
+    # el servicio exponia la API de Docker sin TLS en el puerto 2375.
+    # Si algun dia hace falta dind, la alternativa es
+    # "options: --tls=false --privileged --network host" SIN bloque "ports:"
+    # (con red host no se pueden publicar puertos) y DOCKER_HOST=tcp://localhost:2375.
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Validate workflow files with actionlint
         # Sin esto, un workflow invalido (por ejemplo una clave no permitida
         # en 'services') solo se descubre en GitHub, que lo rechaza antes de
         # crear ningun job.
+        # Este paso va DESPUES del checkout: actionlint lee los ficheros del
+        # repositorio, asi que sin el clone el glob no expande y el paso
+        # termina con 'could not read ".github/workflows/*.yml"' (exit 3).
         run: |
           curl -fsSL -o actionlint.tar.gz \
             https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           tar xzf actionlint.tar.gz actionlint
           ./actionlint .github/workflows/*.yml
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -54,7 +56,18 @@ jobs:
           pip install uv
           uv venv --python 3.11 .venv
           source .venv/bin/activate
-          uv pip install -r apps/api/requirements-dev.txt -r packages/python/adapters/requirements.txt
+          # Primero el lockfile de la API (versiones exactas + hashes, el mismo
+          # que instala la imagen de produccion) y despues las dependencias de
+          # desarrollo y las del adaptador, que no forman parte del lock. El
+          # segundo paso no cambia las versiones ya instaladas: uv no actualiza
+          # un paquete ya presente que cumple el rango.
+          uv pip install --require-hashes -r apps/api/requirements.lock.txt
+          # Los requisitos de los workers se instalan tambien: los tests de
+          # apps/workers/ los importan y 'requests' ya no llega de forma
+          # transitiva (gradio_client 2.x usa httpx).
+          uv pip install -r apps/api/requirements-dev.txt \
+            -r packages/python/adapters/requirements.txt \
+            -r apps/workers/requirements-workers.txt
           npm ci --prefix apps/dashboard
 
       - name: Run pytest suite
